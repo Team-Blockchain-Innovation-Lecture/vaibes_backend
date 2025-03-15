@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suno AI 音楽生成</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+        }
+        .loading {
+            display: none;
+        }
+        audio {
+            width: 100%;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Suno AI 音楽生成</h1>
+    <div class="container">
+        <div>
+            <h2>プロンプト入力</h2>
+            <textarea id="prompt" placeholder="音楽の説明を入力してください（例：「ピアノとギターによる穏やかな曲、雨の日に聴きたい」）"></textarea>
+        </div>
+        <button id="generate">音楽を生成</button>
+        <div id="loading" class="loading">生成中です。しばらくお待ちください...</div>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('generate').addEventListener('click', async () => {
+            const prompt = document.getElementById('prompt').value;
+            const loadingElement = document.getElementById('loading');
+            const resultElement = document.getElementById('result');
+            
+            if (!prompt) {
+                alert('プロンプトを入力してください');
+                return;
+            }
+            
+            loadingElement.style.display = 'block';
+            resultElement.innerHTML = '';
+            
+            try {
+                const response = await fetch('/generate-music', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ prompt })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // 成功した場合、音楽プレーヤーを表示
+                    const audioUrl = data.audio_url || data.results[0].audio_url;
+                    resultElement.innerHTML = `
+                        <h3>生成された音楽</h3>
+                        <p><strong>プロンプト:</strong> ${prompt}</p>
+                        <audio controls src="${audioUrl}"></audio>
+                        <p><a href="${audioUrl}" download>ダウンロード</a></p>
+                    `;
+                } else {
+                    resultElement.innerHTML = `<p>エラー: ${data.error || '不明なエラーが発生しました'}</p>`;
+                }
+            } catch (error) {
+                resultElement.innerHTML = `<p>エラー: ${error.message}</p>`;
+            } finally {
+                loadingElement.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html> 
