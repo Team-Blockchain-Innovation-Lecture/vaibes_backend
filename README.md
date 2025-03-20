@@ -13,3 +13,9 @@ poetry run python XXX.py
 または
 poetry run python -m XXX
 ```
+
+## Milvus
+
+```bash
+poetry run python milvus_create.py
+```
