@@ -5,14 +5,16 @@ import requests
 import numpy as np
 import torch
 from flask import Flask, request, jsonify, send_file
-from transformers import BertJapaneseTokenizer, BertModel
+from transformers import BertJapaneseTokenizer, BertModel, BertTokenizer
 from pymilvus import MilvusClient
 import uuid
 from werkzeug.utils import secure_filename
+from dotenv import load_dotenv
 
 # Flaskアプリケーションの初期化
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False  # 日本語などの非ASCII文字をエスケープしない
+load_dotenv(dotenv_path=".env")
 
 # Milvus接続設定
 MILVUS_URI = os.getenv("MILVUS_URI")
@@ -29,24 +31,24 @@ DEFAULT_PROMPT = "ジャズとクラシックが融合した落ち着いた雰�
 OUTPUT_DIR = "downloads"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# BERTモデルの初期化
-print("BERTモデルを初期化中...")
-model_name = "tohoku-nlp/bert-base-japanese-v3"
-tokenizer = BertJapaneseTokenizer.from_pretrained(model_name)
+# BERTモデルの初期化 - 英語モデルに変更
+print("Initializing BERT model...")
+model_name = "bert-base-uncased"  # 英語BERTモデルを使用
+tokenizer = BertTokenizer.from_pretrained(model_name)
 model = BertModel.from_pretrained(model_name)
 model.eval()
-print("BERTモデルの初期化完了")
+print("BERT model initialization completed")
 
 # Milvusクライアントの初期化
 print(f"Milvusに接続中... ({MILVUS_URI})")
 milvus_client = MilvusClient(uri=MILVUS_URI, token=MILVUS_TOKEN)
 print("Milvus接続完了")
 
-# テキストからベクトルを取得する関数
+# テキストからベクトルを取得する関数 - 英語モデル用に修正
 def get_embedding(text):
     if not text:
         text = ""
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
     with torch.no_grad():
         outputs = model(**inputs)
     # [CLS] トークンのベクトルを取得し、正規化
@@ -55,67 +57,146 @@ def get_embedding(text):
     norm = np.linalg.norm(vec)
     return (vec / norm).tolist() if norm > 0 else vec.tolist()
 
-# Milvusからテキストに最も近いジャンルの参照URLを取得
-def get_reference_url_from_milvus(text):
+# Milvusから参照URLを取得する関数 - 完全修正版
+def get_reference_url_from_milvus(text, genre=None):
     try:
-        print(f"テキスト「{text}」のベクトル化を実行中...")
+        # Milvusが利用できない場合はデフォルトの参照URLを返す
+        if milvus_client is None:
+            print("Milvus client is not available. Using default reference URL")
+            default_url = "https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Rex+Banner+-+Take+U+There+-+Instrumental+Version.mp3"
+            return default_url, "rock", "Energetic rock music"
+            
+        print(f"Vectorizing text: '{text}'...")
         embedding = get_embedding(text)
-        print("ベクトル化完了")
+        print("Vectorization completed")
         
-        print("Milvusで類似ジャンルを検索中...")
-        search_params = {"metric_type": "IP", "params": {"nprobe": 10}}
-        results = milvus_client.search(
-            collection_name=MILVUS_COLLECTION,
-            data=[embedding],
-            field_name="embedding",
-            limit=1,  # 上位1件を取得
-            search_params=search_params,
-            output_fields=["genre", "reference_url"]
-        )
+        print("Searching for similar genres in Milvus...")
         
-        print("\n検索結果:")
-        print(f"結果の型: {type(results)}")
-        print(f"結果の内容: {results}")
+        # ジャンルフィルタの設定
+        expr = None
+        if genre:
+            expr = f'genre == "{genre}"'
+            print(f"Genre filter: {expr}")
         
-        if results and len(results) > 0:
-            # 検索結果の構造を確認
-            first_result = results[0]
-            print(f"最初の結果の型: {type(first_result)}")
-            print(f"最初の結果の内容: {first_result}")
-            
-            # 新しいMilvusクライアントの場合の処理
-            if isinstance(first_result, list) and len(first_result) > 0:
-                top_hit = first_result[0]
-                print(f"トップヒットの型: {type(top_hit)}")
-                print(f"トップヒットの内容: {top_hit}")
+        # 検索実行 - 修正: 以前の動作していたコードを参考に実装
+        try:
+            # 最初の試行: search_paramsを使用
+            search_params = {"metric_type": "IP", "params": {"nprobe": 10}}
+            results = milvus_client.search(
+                collection_name=MILVUS_COLLECTION,
+                data=[embedding],
+                anns_field="embedding",  # field_nameではなくanns_fieldを使用
+                search_params=search_params,  # search_paramsを使用
+                limit=3,
+                expr=expr,
+                output_fields=["genre", "description", "reference_url"]
+            )
+        except Exception as e1:
+            print(f"First search attempt failed: {e1}")
+            try:
+                # 2番目の試行: paramを使用
+                search_params = {"metric_type": "IP", "params": {"nprobe": 10}}
+                results = milvus_client.search(
+                    collection_name=MILVUS_COLLECTION,
+                    data=[embedding],
+                    anns_field="embedding",
+                    param=search_params,  # paramを使用
+                    limit=3,
+                    expr=expr,
+                    output_fields=["genre", "description", "reference_url"]
+                )
+            except Exception as e2:
+                print(f"Second search attempt failed: {e2}")
+                # 3番目の試行: field_nameを使用
+                search_params = {"metric_type": "IP", "params": {"nprobe": 10}}
+                results = milvus_client.search(
+                    collection_name=MILVUS_COLLECTION,
+                    data=[embedding],
+                    field_name="embedding",  # anns_fieldではなくfield_nameを使用
+                    search_params=search_params,
+                    limit=3,
+                    expr=expr,
+                    output_fields=["genre", "description", "reference_url"]
+                )
+        
+        print(f"Search results: {results}")
+        
+        # 検索結果を処理
+        search_results = []
+        top_reference_url = None
+        top_genre = None
+        top_description = None
+        
+        if results and len(results) > 0 and len(results[0]) > 0:
+            for i, hit in enumerate(results[0]):
+                print(f"Hit {i+1} type: {type(hit)}")
+                print(f"Hit {i+1} content: {hit}")
                 
-                # 辞書形式の場合 - entityキーがある場合
-                if isinstance(top_hit, dict):
-                    if 'entity' in top_hit:
-                        entity = top_hit.get('entity', {})
-                        genre = entity.get('genre')
-                        reference_url = entity.get('reference_url')
-                        score = top_hit.get('distance', 0)
-                        print(f"  1. ジャンル: {genre}, スコア: {score:.4f}")
-                        return reference_url, genre
+                # 結果の構造に応じて処理
+                hit_genre = None
+                hit_reference_url = None
+                hit_description = None
+                hit_score = 0
+                
+                # entityがある場合
+                if hasattr(hit, 'entity'):
+                    entity = hit.entity
+                    if isinstance(entity, dict):
+                        hit_genre = entity.get('genre')
+                        hit_reference_url = entity.get('reference_url')
+                        hit_description = entity.get('description')
                     else:
-                        # 直接キーを取得する場合
-                        genre = top_hit.get('genre')
-                        reference_url = top_hit.get('reference_url')
-                        score = top_hit.get('score', 0)
-                        print(f"  1. ジャンル: {genre}, スコア: {score:.4f}")
-                        return reference_url, genre
-            
-            print("検索結果の形式が予期しないものです。詳細なデバッグ情報を確認してください。")
-            return None, None
-        else:
-            print("検索結果が見つかりませんでした")
-            return None, None
+                        # entityがオブジェクトの場合
+                        hit_genre = getattr(entity, 'genre', None)
+                        hit_reference_url = getattr(entity, 'reference_url', None)
+                        hit_description = getattr(entity, 'description', None)
+                    
+                    hit_score = getattr(hit, 'score', getattr(hit, 'distance', 0))
+                # 辞書型の場合
+                elif isinstance(hit, dict):
+                    hit_genre = hit.get('genre')
+                    hit_reference_url = hit.get('reference_url')
+                    hit_description = hit.get('description')
+                    hit_score = hit.get('score', hit.get('distance', 0))
+                
+                print(f"  {i+1}. Genre: {hit_genre}, Score: {hit_score}")
+                print(f"     Description: {hit_description}")
+                print(f"     Reference URL: {hit_reference_url}")
+                
+                # 検索結果をリストに追加
+                if hit_genre or hit_reference_url or hit_description:
+                    search_results.append({
+                        "genre": hit_genre,
+                        "reference_url": hit_reference_url,
+                        "description": hit_description,
+                        "score": float(hit_score) if hit_score else 0.0
+                    })
+                
+                # 最初のヒットを参照URLとして使用
+                if i == 0:
+                    top_reference_url = hit_reference_url
+                    top_genre = hit_genre
+                    top_description = hit_description
+        
+        # 検索結果がない場合はデフォルト値を使用
+        if not top_reference_url:
+            print("No search results found. Using default values")
+            top_reference_url = "https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Rex+Banner+-+Take+U+There+-+Instrumental+Version.mp3"
+            top_genre = "rock"
+            top_description = "Energetic rock music"
+        
+        print(f"Selected reference URL: {top_reference_url}")
+        print(f"Selected genre: {top_genre}")
+        print(f"Selected description: {top_description}")
+        
+        return top_reference_url, top_genre, top_description
+        
     except Exception as e:
-        print(f"Milvus検索エラー: {str(e)}")
+        print(f"Milvus search error: {str(e)}")
+        print("Using default reference URL")
         import traceback
         traceback.print_exc()
-        return None, None
+        return "https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Rex+Banner+-+Take+U+There+-+Instrumental+Version.mp3", "rock", "Energetic rock music"
 
 # AIMLを使用して音楽を生成する関数
 def generate_music(prompt, reference_url=None):
@@ -125,7 +206,7 @@ def generate_music(prompt, reference_url=None):
         # 参照URLが指定されていない場合は、Milvusから取得を試みる
         if not reference_url:
             print("参照URLが指定されていないため、Milvusから検索します...")
-            reference_url, genre = get_reference_url_from_milvus(prompt)
+            reference_url, genre, description = get_reference_url_from_milvus(prompt)
             if reference_url:
                 print(f"Milvusから参照URLを取得しました: {reference_url}")
                 print(f"ジャンル: {genre}")
@@ -141,7 +222,11 @@ def generate_music(prompt, reference_url=None):
         payload = {
             "model": "minimax-music",
             "prompt": prompt,
-            "reference_audio_url": reference_url
+            "reference_audio_url": reference_url,
+            "min_duration": 120,
+            "output_format": "mp3",
+            "temperature": 0.5,
+            "top_p": 0.9,
         }
         
         # APIリクエストヘッダー
@@ -234,62 +319,92 @@ def download_music(generation_id):
         traceback.print_exc()
         return None, None
 
-# 生成状態を確認する関数
+# 音楽生成状態を確認する関数 - 修正版
 def check_generation_status(generation_id):
     try:
-        print("\n生成状態を確認中...")
+        print(f"\nChecking generation status...")
         
-        # 生成IDから":minimax-music"などのモデル情報を削除
+        # generation_idからモデル名を削除（:以降を削除）
         if ":" in generation_id:
             generation_id = generation_id.split(":")[0]
-            print(f"生成IDを修正しました: {generation_id}")
+            print(f"Modified generation ID: {generation_id}")
         
-        # ステータス確認エンドポイント
-        url = f"https://api.aimlapi.com/v2/generations/{generation_id}"
-        headers = {"Authorization": f"Bearer {AIML_API_KEY}"}
+        # AIML APIキーの確認
+        if not AIML_API_KEY:
+            print("ERROR: AIML_API_KEY is not set")
+            return None
         
-        # 最大30回（5分間）試行
-        for attempt in range(1, 31):
-            print(f"確認試行 {attempt}/30...")
-            response = requests.get(url, headers=headers)
+        # 最大試行回数
+        max_attempts = 30
+        
+        for attempt in range(1, max_attempts + 1):
+            print(f"Status check attempt {attempt}/{max_attempts}...")
             
-            if response.status_code == 200:
-                status_data = response.json()
-                print(f"ステータス: {status_data}")
+            # 両方のエンドポイントを試す
+            endpoints = [
+                f"https://api.aimlapi.com/v2/generations/{generation_id}",  # 古いエンドポイント
+                f"https://api.aimlapi.com/v2/generate/audio/{generation_id}"  # 新しいエンドポイント
+            ]
+            
+            # APIリクエストヘッダー
+            headers = {
+                "Authorization": f"Bearer {AIML_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            success = False
+            
+            for endpoint in endpoints:
+                print(f"Trying endpoint: {endpoint}")
+                response = requests.get(endpoint, headers=headers)
+                print(f"Status check response: {response.status_code}")
                 
-                # ステータスを確認
-                status = status_data.get("status")
-                if status == "completed":
-                    print("音楽生成が完了しました")
-                    # 音楽URLを取得
-                    output = status_data.get("output", {})
-                    audio_url = output.get("audio")
-                    if audio_url:
-                        print(f"音楽URL: {audio_url}")
-                        return {"status": "completed", "audio_url": audio_url, "genre": status_data.get("genre")}
-                    else:
-                        print("音楽URLが見つかりません")
-                        return {"status": "error", "message": "音楽URLが見つかりません"}
-                elif status == "failed":
-                    print("音楽生成に失敗しました")
-                    return {"status": "failed", "message": status_data.get("error", "不明なエラー")}
-                else:
-                    print(f"生成中... ステータス: {status}")
-                    # 10秒待機してから再試行
-                    time.sleep(10)
-            else:
-                print(f"ステータス確認エラー: {response.status_code} - {response.text}")
-                # 10秒待機してから再試行
-                time.sleep(10)
+                if response.status_code == 200:
+                    try:
+                        result = response.json()
+                        print(f"Status details: {json.dumps(result, ensure_ascii=False)}")
+                        
+                        # ステータスを取得
+                        status = result.get("status", "").lower()
+                        
+                        # 完了した場合
+                        if status == "completed":
+                            # 出力URLを取得
+                            output_url = result.get("output_url")
+                            if output_url:
+                                print(f"Generation completed! Output URL: {output_url}")
+                                return output_url
+                            else:
+                                print("ERROR: output_url not found in completed response")
+                        # 失敗した場合
+                        elif status in ["failed", "error"]:
+                            error_message = result.get("error", "Unknown error")
+                            print(f"Generation failed: {error_message}")
+                        # まだ処理中の場合
+                        else:
+                            print(f"Current status: {status}. Waiting...")
+                            success = True  # 有効なレスポンスを受け取った
+                            break
+                    except json.JSONDecodeError:
+                        print(f"JSON parse error: {response.text}")
+            
+            # 有効なレスポンスを受け取った場合は待機
+            if success:
+                time.sleep(10)  # 10秒待機
+                continue
+            
+            # どちらのエンドポイントも失敗した場合は待機して再試行
+            print("Both endpoints failed. Retrying...")
+            time.sleep(10)  # 10秒待機
         
-        # 最大試行回数を超えた場合
-        print("タイムアウト: 最大試行回数を超えました")
-        return {"status": "timeout", "message": "生成に時間がかかりすぎています"}
+        print(f"Maximum attempts ({max_attempts}) reached. Timeout.")
+        return None
+    
     except Exception as e:
-        print(f"ステータス確認エラー: {str(e)}")
+        print(f"Error during status check: {str(e)}")
         import traceback
         traceback.print_exc()
-        return {"status": "error", "message": str(e)}
+        return None
 
 # 音楽生成プロセス全体を実行する関数
 def process_music_generation(prompt=None):
@@ -303,7 +418,7 @@ def process_music_generation(prompt=None):
         print(f"プロンプト: {prompt}")
         
         # Milvusから参照URLを取得
-        reference_url, genre = get_reference_url_from_milvus(prompt)
+        reference_url, genre, description = get_reference_url_from_milvus(prompt)
         
         if reference_url:
             print(f"\n最も類似したジャンル: {genre}")
@@ -322,10 +437,10 @@ def process_music_generation(prompt=None):
             return {"error": error_msg}, None, None
         
         # 生成状態を確認
-        generated_status = check_generation_status(generation_id)
+        output_url = check_generation_status(generation_id)
         
-        if generated_status.get("status") != "completed":
-            error_msg = generated_status.get("message", "音楽生成に失敗しました")
+        if not output_url:
+            error_msg = "音楽生成状態の確認に失敗しました。"
             print(error_msg)
             return {"error": error_msg}, None, None
         
@@ -346,7 +461,9 @@ def process_music_generation(prompt=None):
             "message": "音楽生成が完了しました",
             "filename": filename,
             "genre": genre,
-            "prompt": prompt
+            "prompt": prompt,
+            "reference_url": reference_url,
+            "description": description
         }, local_file_path, filename
         
     except Exception as e:
@@ -386,12 +503,13 @@ def api_generate():
         
         # 1. Milvusから参照URLを取得
         print("\n1. Milvusから参照URLを取得中...")
-        reference_url, genre = get_reference_url_from_milvus(prompt)
+        reference_url, genre, description = get_reference_url_from_milvus(prompt)
         
         if not reference_url:
             print("Milvusから参照URLを取得できませんでした。デフォルトURLを使用します。")
             reference_url = "https://example.com/sample.mp3"
             genre = "不明"
+            description = "Unknown"
         else:
             print(f"Milvusから参照URLを取得しました: {reference_url}")
             print(f"ジャンル: {genre}")
@@ -406,9 +524,13 @@ def api_generate():
         }
         
         payload = {
-            "model": "stable-audio",
+            "model": "minimax-music",
             "prompt": prompt,
-            "reference_audio_url": reference_url
+            "reference_audio_url": reference_url,
+            "min_duration": 120,
+            "output_format": "mp3",
+            "temperature": 0.5,
+            "top_p": 0.9,
         }
         
         print(f"リクエストデータ: {json.dumps(payload, ensure_ascii=False)}")
@@ -510,6 +632,8 @@ def api_generate():
                             "audio_url": audio_url,
                             "genre": genre,
                             "prompt": prompt,
+                            "reference_url": reference_url,
+                            "description": description,
                             "raw_response": status_data  # 生のレスポンスも含める
                         }
                         
