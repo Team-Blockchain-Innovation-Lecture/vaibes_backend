@@ -60,64 +60,36 @@ def get_embedding(text):
 # Milvusから参照URLを取得する関数 - 完全修正版
 def get_reference_url_from_milvus(text, genre=None):
     try:
-        # Milvusが利用できない場合はデフォルトの参照URLを返す
-        if milvus_client is None:
-            print("Milvus client is not available. Using default reference URL")
-            default_url = "https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Rex+Banner+-+Take+U+There+-+Instrumental+Version.mp3"
-            return default_url, "rock", "Energetic rock music"
-            
         print(f"Vectorizing text: '{text}'...")
         embedding = get_embedding(text)
         print("Vectorization completed")
         
         print("Searching for similar genres in Milvus...")
         
-        # ジャンルフィルタの設定
-        expr = None
-        if genre:
-            expr = f'genre == "{genre}"'
-            print(f"Genre filter: {expr}")
+        # 検索パラメータの設定
+        search_params = {
+            "metric_type": "IP",
+            "params": {"nprobe": 10}
+        }
         
-        # 検索実行 - 修正: 以前の動作していたコードを参考に実装
-        try:
-            # 最初の試行: search_paramsを使用
-            search_params = {"metric_type": "IP", "params": {"nprobe": 10}}
-            results = milvus_client.search(
-                collection_name=MILVUS_COLLECTION,
-                data=[embedding],
-                anns_field="embedding",  # field_nameではなくanns_fieldを使用
-                search_params=search_params,  # search_paramsを使用
-                limit=3,
-                expr=expr,
-                output_fields=["genre", "description", "reference_url"]
-            )
-        except Exception as e1:
-            print(f"First search attempt failed: {e1}")
-            try:
-                # 2番目の試行: paramを使用
-                search_params = {"metric_type": "IP", "params": {"nprobe": 10}}
-                results = milvus_client.search(
-                    collection_name=MILVUS_COLLECTION,
-                    data=[embedding],
-                    anns_field="embedding",
-                    param=search_params,  # paramを使用
-                    limit=3,
-                    expr=expr,
-                    output_fields=["genre", "description", "reference_url"]
-                )
-            except Exception as e2:
-                print(f"Second search attempt failed: {e2}")
-                # 3番目の試行: field_nameを使用
-                search_params = {"metric_type": "IP", "params": {"nprobe": 10}}
-                results = milvus_client.search(
-                    collection_name=MILVUS_COLLECTION,
-                    data=[embedding],
-                    field_name="embedding",  # anns_fieldではなくfield_nameを使用
-                    search_params=search_params,
-                    limit=3,
-                    expr=expr,
-                    output_fields=["genre", "description", "reference_url"]
-                )
+        # 検索オプションの準備
+        search_options = {
+            "collection_name": MILVUS_COLLECTION,
+            "data": [embedding],
+            "anns_field": "embedding",
+            "search_params": search_params,
+            "limit": 3,
+            "output_fields": ["genre", "description", "reference_url"]
+        }
+        
+        # まずジャンルフィルタなしで検索
+        results = milvus_client.search(**search_options)
+        
+        # ジャンルフィルタがある場合は、フィルタ付きで再検索
+        if genre and (not results or len(results) == 0 or len(results[0]) == 0):
+            search_options["expr"] = f'genre == "{genre}"'
+            print(f"Genre filter: {search_options['expr']}")
+            results = milvus_client.search(**search_options)
         
         print(f"Search results: {results}")
         
@@ -178,25 +150,23 @@ def get_reference_url_from_milvus(text, genre=None):
                     top_genre = hit_genre
                     top_description = hit_description
         
-        # 検索結果がない場合はデフォルト値を使用
+        # 検索結果がない場合は例外を投げる代わりにデフォルト値を返す
         if not top_reference_url:
             print("No search results found. Using default values")
-            top_reference_url = "https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Rex+Banner+-+Take+U+There+-+Instrumental+Version.mp3"
-            top_genre = "rock"
-            top_description = "Energetic rock music"
-        
-        print(f"Selected reference URL: {top_reference_url}")
-        print(f"Selected genre: {top_genre}")
-        print(f"Selected description: {top_description}")
+            return ("https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Rex+Banner+-+Take+U+There+-+Instrumental+Version.mp3",
+                   genre if genre else "electronic",
+                   "Energetic electronic music")
         
         return top_reference_url, top_genre, top_description
-        
+    
     except Exception as e:
         print(f"Milvus search error: {str(e)}")
-        print("Using default reference URL")
         import traceback
         traceback.print_exc()
-        return "https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Rex+Banner+-+Take+U+There+-+Instrumental+Version.mp3", "rock", "Energetic rock music"
+        # エラーの場合もデフォルト値を返す
+        return ("https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Rex+Banner+-+Take+U+There+-+Instrumental+Version.mp3",
+               genre if genre else "electronic",
+               "Energetic electronic music")
 
 # AIMLを使用して音楽を生成する関数
 def generate_music(prompt, reference_url=None):
