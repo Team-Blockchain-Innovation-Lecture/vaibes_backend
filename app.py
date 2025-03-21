@@ -751,5 +751,109 @@ def download_file(filename):
         print(error_msg)
         return jsonify({"error": error_msg}), 500
 
+# 画像生成用のエンドポイント
+@app.route('/api/generate/image', methods=['GET', 'POST'])
+def api_generate_image():
+    try:
+        # プロンプトの取得（複数の方法をサポート）
+        prompt = None
+        
+        # 1. GETリクエストのクエリパラメータから取得
+        if request.method == 'GET':
+            prompt = request.args.get('prompt')
+        
+        # 2. POSTリクエストのJSONボディから取得
+        elif request.is_json:
+            data = request.get_json()
+            prompt = data.get('prompt')
+        
+        # 3. POSTリクエストのフォームデータから取得
+        else:
+            prompt = request.form.get('prompt') +"Plus, make it pop and make it a meme image like the ones used in web3."
+        
+        if not prompt:
+            error_msg = "プロンプトが指定されていません"
+            return app.response_class(
+                response=json.dumps({"error": error_msg}, ensure_ascii=False),
+                status=400,
+                mimetype='application/json; charset=utf-8'
+            )
+
+        print(f"\n=== 画像生成プロセスを開始 ===")
+        print(f"プロンプト: {prompt}")
+        
+        # AIMLのエンドポイントとパラメータ設定
+        url = "https://api.aimlapi.com/v1/images/generations"
+        
+        payload = {
+            "model": "stabilityai/stable-diffusion-xl-base-1.0",
+            "prompt": prompt,
+            "steps": "50",  # 文字列として渡す
+            "n": 1,
+            "size": "1024x1024"
+            # negative_promptを削除
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {AIML_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        print("画像生成APIを呼び出し中...")
+        print(f"リクエストデータ: {json.dumps(payload, ensure_ascii=False)}")
+        
+        response = requests.post(url, json=payload, headers=headers)
+        print(f"APIレスポンス: ステータスコード={response.status_code}")
+        print(f"レスポンス本文: {response.text}")
+        
+        if response.status_code not in [200, 201]:
+            error_msg = f"画像生成APIエラー: {response.status_code} - {response.text}"
+            print(error_msg)
+            return app.response_class(
+                response=json.dumps({"error": error_msg}, ensure_ascii=False),
+                status=500,
+                mimetype='application/json; charset=utf-8'
+            )
+        
+        result = response.json()
+        
+        # 画像URLの取得
+        if "data" in result and len(result["data"]) > 0:
+            image_url = result["data"][0].get("url")
+            if image_url:
+                print(f"画像URL: {image_url}")
+                return app.response_class(
+                    response=json.dumps({
+                        "success": True,
+                        "message": "画像生成が完了しました",
+                        "image_url": image_url,
+                        "prompt": prompt
+                    }, ensure_ascii=False),
+                    status=200,
+                    mimetype='application/json; charset=utf-8'
+                )
+        
+        error_msg = "画像URLが見つかりません"
+        print(error_msg)
+        return app.response_class(
+            response=json.dumps({"error": error_msg}, ensure_ascii=False),
+            status=500,
+            mimetype='application/json; charset=utf-8'
+        )
+        
+    except Exception as e:
+        error_msg = f"エラーが発生しました: {str(e)}"
+        print(error_msg)
+        import traceback
+        traceback.print_exc()
+        return app.response_class(
+            response=json.dumps({
+                "error": error_msg,
+                "details": "詳細はサーバーログを確認してください"
+            }, ensure_ascii=False),
+            status=500,
+            mimetype='application/json; charset=utf-8'
+        )
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001)
