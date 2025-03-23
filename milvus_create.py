@@ -17,7 +17,8 @@ music_data = [
     {"genre": "jazz", "description": "Smooth jazz", "reference_url": "https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Semo+-+The+Microwave+Dance.mp3"},
     {"genre": "hiphop", "description": "Rhythmic hip-hop", "reference_url": "https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Mo%CC%88nt+Lee+-+Dripper+-+No+Lead+Vocals.mp3"},
     # {"genre": "R&B", "description": "Soulful R&B", "reference_url": "https://example.com/rnb_sample.mp3"},
-    {"genre": "electronic", "description": "Electronic music", "reference_url": "https://tand-dev.github.io/audio-hosting/spinning-head-271171.mp3"},
+    {"genre": "electronic", "description": "Electronic and aggressive impression with electric guitar", "reference_url": "https://tand-dev.github.io/audio-hosting/spinning-head-271171.mp3"},
+    {"genre": "electronic", "description": "Songs with electronic and EDM elements and great female voices.", "reference_url": "https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/electronic/Culture+Code+-+Make+Me+Move+(feat.+Karra)+_+Dance+Pop+_+NCS+-+Copyright+Free+Music.mp3"}
     # {"genre": "dance", "description": "Dance music", "reference_url": "https://example.com/dance_sample.mp3"},
     # {"genre": "reggae", "description": "Reggae music", "reference_url": "https://example.com/reggae_sample.mp3"},
     # {"genre": "country", "description": "Country music", "reference_url": "https://example.com/country_sample.mp3"},
@@ -167,10 +168,21 @@ print(f"Flush completed (time: {round(t1-t0,4)} seconds)")
 
 # Create index (automatically created if index parameters are specified at collection creation)
 print("Creating index...")
-t0 = time.time()
-milvus_client.create_index(collection_name, field_name="embedding", index_params=index_params)
-t1 = time.time()
-print(f"Index creation completed (time: {round(t1-t0,4)} seconds)")
+try:
+    milvus_client.create_index(
+        collection_name,
+        field_name="embedding",  # field_nameは別パラメータとして渡す
+        index_params={
+            "metric_type": "IP",
+            "index_type": "IVF_FLAT",
+            "params": {"nlist": 128}
+        }
+    )
+    print("Index creation completed")
+except Exception as e:
+    print(f"Error creating index: {str(e)}")
+    import traceback
+    traceback.print_exc()
 
 # Load collection (make it searchable)
 print("Loading collection...")
@@ -197,6 +209,18 @@ for test_query in test_queries:
     print(f"Query: '{test_query}'")
     print("Search results:")
     for i, result in enumerate(results[0]):
-        print(f"  {i+1}. Score: {result.score:.4f}, Genre: {result.entity.get('genre')}, Description: {result.entity.get('description')}, URL: {result.entity.get('reference_url')}")
+        if isinstance(result, dict):
+            # 辞書型の場合
+            score = result.get('distance', 0)
+            entity = result.get('entity', {})
+        else:
+            # オブジェクト型の場合
+            score = getattr(result, 'distance', 0)
+            entity = getattr(result, 'entity', {})
+        
+        print(f"  {i+1}. Score: {score:.4f}, "
+              f"Genre: {entity.get('genre')}, "
+              f"Description: {entity.get('description')}, "
+              f"URL: {entity.get('reference_url')}")
 
 print("\nMilvus database creation completed.")

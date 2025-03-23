@@ -78,95 +78,58 @@ def get_reference_url_from_milvus(text, genre=None):
             "data": [embedding],
             "anns_field": "embedding",
             "search_params": search_params,
-            "limit": 3,
+            "limit": 10,  # より多くの候補を取得
             "output_fields": ["genre", "description", "reference_url"]
         }
         
-        # まずジャンルフィルタなしで検索
-        results = milvus_client.search(**search_options)
-        
-        # ジャンルフィルタがある場合は、フィルタ付きで再検索
-        if genre and (not results or len(results) == 0 or len(results[0]) == 0):
+        # まずジャンルで絞り込む
+        if genre:
             search_options["expr"] = f'genre == "{genre}"'
-            print(f"Genre filter: {search_options['expr']}")
-            results = milvus_client.search(**search_options)
+            print(f"Filtering by genre: {genre}")
         
-        print(f"Search results: {results}")
+        # 指定されたジャンル内でベクトル検索を実行
+        results = milvus_client.search(**search_options)
+        print(f"Search results within genre {genre if genre else 'all'}: {results}")
         
         # 検索結果を処理
-        search_results = []
-        top_reference_url = None
-        top_genre = None
-        top_description = None
-        
-        if results and len(results) > 0 and len(results[0]) > 0:
-            for i, hit in enumerate(results[0]):
-                print(f"Hit {i+1} type: {type(hit)}")
-                print(f"Hit {i+1} content: {hit}")
-                
-                # 結果の構造に応じて処理
-                hit_genre = None
-                hit_reference_url = None
-                hit_description = None
-                hit_score = 0
-                
-                # entityがある場合
-                if hasattr(hit, 'entity'):
-                    entity = hit.entity
-                    if isinstance(entity, dict):
-                        hit_genre = entity.get('genre')
-                        hit_reference_url = entity.get('reference_url')
-                        hit_description = entity.get('description')
-                    else:
-                        # entityがオブジェクトの場合
-                        hit_genre = getattr(entity, 'genre', None)
-                        hit_reference_url = getattr(entity, 'reference_url', None)
-                        hit_description = getattr(entity, 'description', None)
+        if results and isinstance(results, list) and len(results) > 0:
+            hits = results[0]  # 最初の検索結果セット
+            if isinstance(hits, str):
+                # 文字列の場合はパース
+                import ast
+                hits = ast.literal_eval(hits)
+            
+            if hits and len(hits) > 0:
+                # 指定されたジャンル内で最も類似度の高い結果を取得
+                genre_hits = [hit for hit in hits if hit['entity']['genre'] == genre] if genre else hits
+                if genre_hits:
+                    # ジャンル内でスコアでソート
+                    best_hit = max(genre_hits, key=lambda x: float(x['distance']))
                     
-                    hit_score = getattr(hit, 'score', getattr(hit, 'distance', 0))
-                # 辞書型の場合
-                elif isinstance(hit, dict):
-                    hit_genre = hit.get('genre')
-                    hit_reference_url = hit.get('reference_url')
-                    hit_description = hit.get('description')
-                    hit_score = hit.get('score', hit.get('distance', 0))
-                
-                print(f"  {i+1}. Genre: {hit_genre}, Score: {hit_score}")
-                print(f"     Description: {hit_description}")
-                print(f"     Reference URL: {hit_reference_url}")
-                
-                # 検索結果をリストに追加
-                if hit_genre or hit_reference_url or hit_description:
-                    search_results.append({
-                        "genre": hit_genre,
-                        "reference_url": hit_reference_url,
-                        "description": hit_description,
-                        "score": float(hit_score) if hit_score else 0.0
-                    })
-                
-                # 最初のヒットを参照URLとして使用
-                if i == 0:
-                    top_reference_url = hit_reference_url
-                    top_genre = hit_genre
-                    top_description = hit_description
+                    print(f"Best match within genre '{genre if genre else 'all'}':")
+                    print(f"Score: {best_hit['distance']}")
+                    print(f"Genre: {best_hit['entity']['genre']}")
+                    print(f"Description: {best_hit['entity']['description']}")
+                    print(f"URL: {best_hit['entity']['reference_url']}")
+                    
+                    return (
+                        best_hit['entity']['reference_url'],
+                        best_hit['entity']['genre'],
+                        best_hit['entity']['description']
+                    )
         
-        # 検索結果がない場合は例外を投げる代わりにデフォルト値を返す
-        if not top_reference_url:
-            print("No search results found. Using default values")
-            return ("https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Rex+Banner+-+Take+U+There+-+Instrumental+Version.mp3",
-                   genre if genre else "electronic",
-                   "Energetic electronic music")
-        
-        return top_reference_url, top_genre, top_description
+        print(f"No matches found for genre '{genre if genre else 'all'}'. Using default values")
+        return ("https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/electronic/Culture+Code+-+Make+Me+Move+(feat.+Karra)+_+Dance+Pop+_+NCS+-+Copyright+Free+Music.mp3",
+               genre if genre else "electronic",
+               "Electronic music with great vocals")
     
     except Exception as e:
         print(f"Milvus search error: {str(e)}")
         import traceback
         traceback.print_exc()
-        # エラーの場合もデフォルト値を返す
-        return ("https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/Rex+Banner+-+Take+U+There+-+Instrumental+Version.mp3",
+        return ("https://vaibes-prd-s3-music.s3.ap-northeast-1.amazonaws.com/refarence_music/electronic/Culture+Code+-+Make+Me+Move+(feat.+Karra)+_+Dance+Pop+_+NCS+-+Copyright+Free+Music.mp3",
                genre if genre else "electronic",
-               "Energetic electronic music")
+               "Electronic music with great vocals")
 
 # AIMLを使用して音楽を生成する関数
 def generate_music(prompt, reference_url=None):
