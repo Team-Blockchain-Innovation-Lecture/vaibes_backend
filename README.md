@@ -23,7 +23,7 @@ poetry run python milvus_create.py
 ## テスト
 
 ```bash
-curl -X POST "http://localhost:5000/api/generate" \
+curl -X POST "http://localhost:5001/api/generate" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "クールなEDMで「バイブス」と歌って",
