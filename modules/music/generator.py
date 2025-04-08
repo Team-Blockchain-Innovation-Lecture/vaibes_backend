@@ -10,6 +10,7 @@ load_dotenv()
 
 # Suno API設定
 SUNO_API_KEY = os.getenv("SUNO_API_KEY")
+CALLBACK_URL = os.getenv("CALLBACK_URL")
 BASE_URL = "https://apibox.erweima.ai"
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'output')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -91,15 +92,17 @@ def call_suno_api(endpoint, data, max_retries=3, retry_delay=5):
     else:
         raise Exception("Maximum retries exceeded")
 
-def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, model_version="v4"):
+def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, model_version="v4", wait_for_completion=True, max_wait_time=300):
     """
     Suno APIを使用して音楽を生成する関数
     
     Args:
         prompt: 音楽生成のプロンプト
         reference_style: 参照スタイル（ジャンルなど）
-        with_lyrics: 歌詞を含めるかどうか
+        with_lyrics: 歌詞を含めるかどうか（デフォルトはTrue）
         model_version: モデルバージョン（v3.5, v4など）
+        wait_for_completion: 生成完了を待つかどうか
+        max_wait_time: 最大待機時間（秒）
         
     Returns:
         生成された音楽の情報
@@ -110,6 +113,7 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
         print(f"Reference style: {reference_style}")
         print(f"With lyrics: {with_lyrics}")
         print(f"Model version: {model_version}")
+        print(f"Wait for completion: {wait_for_completion}")
         
         # APIキーの確認
         if not SUNO_API_KEY:
@@ -138,8 +142,17 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
             "instrumental": not with_lyrics,  # with_lyricsの逆がinstrumental
             "model": formatted_model,
             "taskId": task_id,
-            "callBackUrl": "https://localhost:5001/callback"
+            "callBackUrl": CALLBACK_URL
         }
+        
+        # 歌詞付き音楽生成の場合、プロンプトに歌詞に関する指示を追加
+        if with_lyrics and "歌詞" not in prompt and "lyrics" not in prompt.lower():
+            # プロンプトに歌詞に関する指示がない場合、自動的に追加
+            if "日本語" in prompt or "Japanese" in prompt:
+                data["prompt"] += "。日本語の歌詞を含めてください。"
+            else:
+                data["prompt"] += ". Include meaningful lyrics."
+            print(f"Enhanced prompt for lyrics: '{data['prompt']}'")
         
         # 音楽生成APIを呼び出す
         result = call_suno_api("/api/v1/generate", data)
@@ -156,66 +169,105 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
             
         print(f"Task ID from API: {api_task_id}")
         
-        # 正しいステータス確認エンドポイントを使用
-        status_endpoint = "/api/v1/status"  # 修正: /api/v1/query から /api/v1/status に変更
+        # 生成完了を待たない場合はここで返す
+        if not wait_for_completion:
+            print("Not waiting for completion, returning task ID only")
+            return {
+                "task_id": api_task_id,
+                "audio_url": None,
+                "lyrics": None,
+                "cover_image_url": None,
+                "prompt": prompt,
+                "reference_style": reference_style,
+                "with_lyrics": with_lyrics,
+                "model_version": model_version,
+                "status": "pending"
+            }
         
-        # タスクの状態を確認 - リトライなし
-        print(f"Checking task status...")
+        # 生成完了を待つ
+        print(f"Waiting for music generation to complete (max {max_wait_time} seconds)...")
         
-        # 状態確認APIを呼び出す
-        status_data = {
-            "taskId": api_task_id
-        }
+        start_time = time.time()
+        status_endpoint = "/api/v1/status"
         
-        try:
-            status_result = call_suno_api(status_endpoint, status_data, max_retries=1)
-            status_data = status_result.get("data", {})
+        while time.time() - start_time < max_wait_time:
+            # 状態確認APIを呼び出す
+            status_data = {
+                "taskId": api_task_id
+            }
             
-            print(f"Status response: {json.dumps(status_data, ensure_ascii=False)}")
-            
-            # 状態を確認
-            status = status_data.get("status")
-            print(f"Current status: {status}")
-            
-            if status == "success":
-                # 成功した場合、音楽URLを取得
-                audio_url = status_data.get("audioUrl")
-                lyrics = status_data.get("lyrics", "")
-                cover_image_url = status_data.get("coverImageUrl", "")
+            try:
+                print(f"Checking status for task {api_task_id}...")
+                status_result = call_suno_api(status_endpoint, status_data, max_retries=1)
+                print(f"Status API response: {json.dumps(status_result, ensure_ascii=False)}")
                 
-                if audio_url:
-                    print(f"Generation successful!")
-                    print(f"Audio URL: {audio_url}")
-                    print(f"Lyrics: {lyrics}")
-                    print(f"Cover image URL: {cover_image_url}")
+                status_data = status_result.get("data", {})
+                
+                # 状態を確認
+                status = status_data.get("status")
+                print(f"Current status: {status}")
+                
+                if status == "success":
+                    # 成功した場合、音楽URLを取得
+                    # APIレスポンスのフィールド名に合わせてアクセス
+                    audio_url = status_data.get("audioUrl")
+                    lyrics = status_data.get("lyrics", "")
+                    cover_image_url = status_data.get("coverImageUrl", "")
                     
-                    # 結果を返す
-                    return {
-                        "task_id": api_task_id,
-                        "audio_url": audio_url,
-                        "lyrics": lyrics,
-                        "cover_image_url": cover_image_url,
-                        "prompt": prompt,
-                        "reference_style": reference_style,
-                        "with_lyrics": with_lyrics,
-                        "model_version": model_version
-                    }
-            
-        except Exception as e:
-            print(f"Error checking status: {str(e)}")
+                    print(f"Success response data: {json.dumps(status_data, ensure_ascii=False)}")
+                    
+                    if audio_url:
+                        print(f"Generation successful!")
+                        print(f"Audio URL: {audio_url}")
+                        print(f"Lyrics: {lyrics}")
+                        print(f"Cover image URL: {cover_image_url}")
+                        
+                        # 歌詞付きモードなのに歌詞がない場合の警告
+                        if with_lyrics and not lyrics:
+                            print("WARNING: Lyrics were requested but none were returned")
+                        
+                        # 結果を返す
+                        return {
+                            "task_id": api_task_id,
+                            "audio_url": audio_url,
+                            "lyrics": lyrics,
+                            "cover_image_url": cover_image_url,
+                            "prompt": prompt,
+                            "reference_style": reference_style,
+                            "with_lyrics": with_lyrics,
+                            "model_version": model_version,
+                            "status": "success"
+                        }
+                    else:
+                        print("ERROR: No audio_url in success response")
+                        print(f"Full status data: {json.dumps(status_data, ensure_ascii=False)}")
+                        
+                elif status == "failed":
+                    print(f"ERROR: Task failed: {status_data.get('message', 'Unknown error')}")
+                    break
+                    
+                # 処理中の場合は待機
+                print(f"Waiting for 10 seconds... (Elapsed time: {int(time.time() - start_time)} seconds)")
+                time.sleep(10)  # 10秒待機
+                
+            except Exception as e:
+                print(f"Error checking status: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                time.sleep(5)  # エラー時は5秒待機
         
-        # 音楽生成は非同期なので、タスクIDを返す
-        print("Returning task ID for later retrieval")
+        # 最大待機時間を超えた場合
+        print(f"Maximum wait time ({max_wait_time} seconds) exceeded")
         return {
             "task_id": api_task_id,
-            "audio_url": None,  # 音楽URLはまだ利用できない
+            "audio_url": None,
             "lyrics": None,
             "cover_image_url": None,
             "prompt": prompt,
             "reference_style": reference_style,
             "with_lyrics": with_lyrics,
             "model_version": model_version,
-            "status": "pending"  # 処理中であることを示す
+            "status": "pending"
         }
         
     except Exception as e:
@@ -227,7 +279,7 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
 
 def check_generation_status(task_id):
     """
-    生成タスクの状態を確認する関数
+    タスクの状態を確認する関数
     
     Args:
         task_id: タスクID
@@ -238,24 +290,30 @@ def check_generation_status(task_id):
     try:
         print(f"\nChecking status for task {task_id}...")
         
+        # APIキーの確認
+        if not SUNO_API_KEY:
+            print("ERROR: SUNO_API_KEY is not set")
+            return None
+        
         # リクエストデータを準備
         data = {
             "taskId": task_id
         }
         
         # 状態確認APIを呼び出す
-        result = call_suno_api("/api/v1/status", data)
+        result = call_suno_api("/api/v1/status", data, max_retries=1)
         
-        # レスポンスから状態情報を取得
+        # レスポンスからデータを取得
         response_data = result.get("data", {})
-        status = response_data.get("status")
         
-        print(f"Status: {status}")
+        print(f"Status response: {json.dumps(response_data, ensure_ascii=False)}")
         
         return response_data
         
     except Exception as e:
-        print(f"Error checking generation status: {str(e)}")
+        print(f"Error checking status: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def get_wav_format(task_id):
