@@ -325,16 +325,29 @@ def check_status():
         status_result = check_generation_status(task_id)
         
         if not status_result:
-            return jsonify({"error": "Failed to check status"}), 500
+            return jsonify({
+                "success": False,
+                "error": "Failed to check status",
+                "task_id": task_id
+            }), 500
+        
+        # 状態を確認
+        status = status_result.get("status", "unknown")
+        
+        # APIレスポンスのフィールド名に合わせてアクセス
+        audio_url = status_result.get("audioUrl")
+        lyrics = status_result.get("lyrics")
+        cover_image_url = status_result.get("coverImageUrl")
         
         # レスポンスを返す
         return jsonify({
             "success": True,
-            "status": status_result.get("status"),
-            "audio_url": status_result.get("audioUrl"),
-            "lyrics": status_result.get("lyrics"),
-            "cover_image_url": status_result.get("coverImageUrl"),
-            "task_id": task_id
+            "status": status,
+            "audio_url": audio_url,
+            "lyrics": lyrics,
+            "cover_image_url": cover_image_url,
+            "task_id": task_id,
+            "message": "Music generation is still in progress." if status != "success" else "Music generation completed."
         })
         
     except Exception as e:
