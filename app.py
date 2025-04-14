@@ -2,8 +2,9 @@ import os
 import time
 import json
 import uuid
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, render_template
 from dotenv import load_dotenv
+from datetime import datetime
 
 # Flaskアプリケーションの初期化
 app = Flask(__name__)
@@ -16,6 +17,9 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # デフォルトのプロンプト
 DEFAULT_PROMPT = "ジャズとクラシックが融合した落ち着いた雰囲気の曲"
+
+# コールバックデータを保存するためのディクショナリ
+callback_data = {}
 
 # ルートエンドポイント: APIドキュメント
 @app.route('/')
@@ -82,6 +86,36 @@ def api_docs():
                 "path": "/api/check-status",
                 "method": "POST",
                 "description": "タスクの状態を確認"
+            },
+            {
+                "path": "/callback",
+                "method": "GET",
+                "description": "最新のコールバックデータを表示"
+            },
+            {
+                "path": "/callbacks",
+                "method": "GET",
+                "description": "保存されているすべてのコールバックデータを一覧表示"
+            },
+            {
+                "path": "/callback/<task_id>",
+                "method": "GET",
+                "description": "特定のタスクIDに対するコールバックデータを取得"
+            },
+            {
+                "path": "/simulate-callback",
+                "method": "POST",
+                "description": "コールバックをシミュレートするためのエンドポイント"
+            },
+            {
+                "path": "/clear-callbacks",
+                "method": "POST",
+                "description": "保存されているすべてのコールバックデータをクリアするエンドポイント"
+            },
+            {
+                "path": "/dashboard",
+                "method": "GET",
+                "description": "シンプルなダッシュボードを表示するエンドポイント"
             }
         ],
         "default_prompt": DEFAULT_PROMPT
@@ -356,5 +390,189 @@ def check_status():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route('/callback', methods=['GET', 'POST'])
+def callback():
+    """
+    Suno APIからのコールバックを受け取るエンドポイント
+    GETリクエストの場合は最新のコールバックデータを表示
+    POSTリクエストの場合はコールバックデータを保存
+    """
+    # GETリクエストの場合
+    if request.method == 'GET':
+        # 最新のコールバックデータを取得
+        if not callback_data:
+            return jsonify({
+                "status": "No callback data available",
+                "message": "No callbacks have been received yet"
+            })
+        
+        # 最新のタスクIDを取得
+        latest_task_id = max(callback_data.keys(), key=lambda k: callback_data[k].get("timestamp", ""))
+        latest_data = callback_data[latest_task_id]
+        
+        return jsonify({
+            "status": "success",
+            "message": "Latest callback data",
+            "task_id": latest_task_id,
+            "timestamp": latest_data.get("timestamp"),
+            "data": latest_data.get("data")
+        })
+    
+    # POSTリクエストの場合
+    try:
+        # リクエストデータを取得
+        data = request.get_json()
+        if not data:
+            print("Error: Invalid JSON data in callback")
+            return jsonify({"error": "Invalid JSON data"}), 400
+        
+        print(f"Received callback data: {json.dumps(data, ensure_ascii=False)}")
+        
+        # タスクIDを取得
+        task_id = data.get("data", {}).get("task_id")
+        if not task_id:
+            print("Error: No task_id in callback data")
+            return jsonify({"error": "No task_id in callback data"}), 400
+        
+        # コールバックデータを保存
+        callback_data[task_id] = {
+            "data": data,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        print(f"Stored callback data for task_id: {task_id}")
+        
+        # 成功レスポンスを返す
+        return jsonify({
+            "success": True,
+            "message": "Callback received and processed successfully"
+        })
+        
+    except Exception as e:
+        print(f"Error in callback endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/callbacks', methods=['GET'])
+def list_callbacks():
+    """
+    保存されているすべてのコールバックデータを一覧表示するエンドポイント
+    """
+    if not callback_data:
+        return jsonify({
+            "status": "No callback data available",
+            "message": "No callbacks have been received yet"
+        })
+    
+    # コールバックデータの概要を作成
+    callback_summary = {}
+    for task_id, data in callback_data.items():
+        callback_summary[task_id] = {
+            "timestamp": data.get("timestamp"),
+            "status": data.get("data", {}).get("code", "unknown"),
+            "message": data.get("data", {}).get("msg", "No message")
+        }
+    
+    return jsonify({
+        "status": "success",
+        "message": "All callback data",
+        "count": len(callback_data),
+        "callbacks": callback_summary
+    })
+
+@app.route('/callback/<task_id>', methods=['GET'])
+def get_callback(task_id):
+    """
+    特定のタスクIDに対するコールバックデータを取得するエンドポイント
+    """
+    if task_id not in callback_data:
+        return jsonify({
+            "status": "not_found",
+            "message": f"No callback data found for task_id: {task_id}"
+        }), 404
+    
+    return jsonify({
+        "status": "success",
+        "message": f"Callback data for task_id: {task_id}",
+        "task_id": task_id,
+        "timestamp": callback_data[task_id].get("timestamp"),
+        "data": callback_data[task_id].get("data")
+    })
+
+@app.route('/simulate-callback', methods=['POST'])
+def simulate_callback():
+    """
+    コールバックをシミュレートするエンドポイント
+    """
+    try:
+        # リクエストデータを取得
+        request_data = request.get_json()
+        if not request_data:
+            return jsonify({"error": "Invalid JSON data"}), 400
+        
+        # タスクIDを取得または生成
+        task_id = request_data.get("task_id", f"simulated_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        
+        # シミュレートするコールバックデータを作成
+        simulated_data = {
+            "code": 200,
+            "msg": "All generated successfully.",
+            "data": {
+                "callbackType": "complete",
+                "task_id": task_id,
+                "data": [
+                    {
+                        "id": f"simulated_item_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                        "audio_url": "https://example.com/simulated.mp3",
+                        "source_audio_url": "https://example.com/simulated.mp3",
+                        "image_url": "https://example.com/simulated.jpg",
+                        "title": request_data.get("title", "Simulated Music"),
+                        "duration": request_data.get("duration", 180)
+                    }
+                ]
+            }
+        }
+        
+        # コールバックデータを保存
+        callback_data[task_id] = {
+            "data": simulated_data,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        return jsonify({
+            "success": True,
+            "message": "Simulated callback created",
+            "task_id": task_id,
+            "data": simulated_data
+        })
+        
+    except Exception as e:
+        print(f"Error in simulate-callback endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/clear-callbacks', methods=['POST'])
+def clear_callbacks():
+    """
+    すべてのコールバックデータをクリアするエンドポイント
+    """
+    try:
+        callback_data.clear()
+        return jsonify({
+            "success": True,
+            "message": "All callback data cleared"
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # 環境変数からポート番号を取得（デフォルトは5001）
+    port = int(os.environ.get("PORT", 5001))
+    
+    print(f"Starting server at http://localhost:{port}")
+    app.run(host='0.0.0.0', port=port, debug=True)
