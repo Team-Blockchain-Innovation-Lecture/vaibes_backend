@@ -28,7 +28,27 @@ curl -X POST "http://localhost:5001/api/generate" \
   -d '{
     "prompt": "クールなEDMで「バイブス」と歌って",
     "genre": "EDM",
-    "instrumental": true,
+    "instrumental": false,
     "model_version": "v3.5"
   }'
 ```
+ngrokをインストール
+```bash
+brew install ngrok
+```
+ngrokのAPIキーを設定
+```bash
+ngrok config add-authtoken <ngrokのAPIキー>
+```
+
+ngrokを起動
+```bash
+ngrok http 5001
+```
+
+ngrokのURLを環境変数に設定
+```bash
+export CALLBACK_URL=https://bc73-122-222-70-231.ngrok-free.app/callback
+```
+
+

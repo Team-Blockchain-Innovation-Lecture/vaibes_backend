@@ -124,27 +124,52 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
         print(f"SUNO_API_KEY: {SUNO_API_KEY[:5]}...{SUNO_API_KEY[-5:] if SUNO_API_KEY else ''}")
         
         # APIエンドポイント
-        api_url = "https://api.suno.ai/v1/generate"
+        api_endpoint = "/api/v1/generate"
         
-        # モデルバージョンのフォーマット
-        formatted_model = model_version.upper()
-        if not formatted_model.startswith("V"):
-            formatted_model = f"V{formatted_model}"
+        # モデルバージョンのフォーマット - 修正
+        # Suno APIが受け付ける正確な形式に変換
+        if model_version.lower() == "v3.5" or model_version.lower() == "v3_5" or model_version == "3.5":
+            formatted_model = "V3_5"  # 大文字V、アンダースコア
+        elif model_version.lower() == "v4" or model_version == "4":
+            formatted_model = "V4"    # 大文字V
+        else:
+            # デフォルトはV4
+            formatted_model = "V4"
+            
+        print(f"Formatted model: {formatted_model}")
         
         # タスクIDの生成（一意の識別子）
         task_id = str(uuid.uuid4())
         
-        # コールバックURLの設定
+        # コールバックURLの設定 - httpsからhttpに修正
         callback_url = CALLBACK_URL
+        if callback_url.startswith("https://"):
+            callback_url = callback_url.replace("https://", "http://")
+        
+        # ローカル開発環境の場合、コールバックURLを確認
+        if "localhost" in callback_url or "127.0.0.1" in callback_url:
+            print(f"警告: ローカルURLへのコールバックは外部から到達できない可能性があります: {callback_url}")
+            print("ngrokなどのトンネリングサービスの使用を検討してください")
+        
         print(f"Callback URL: {callback_url}")
         
-        # リクエストデータを準備
+        # 歌詞付き音楽生成の場合、プロンプトに歌詞に関する指示を追加
+        enhanced_prompt = prompt
+        if with_lyrics and "歌詞" not in prompt and "lyrics" not in prompt.lower():
+            # プロンプトに歌詞に関する指示がない場合、自動的に追加
+            if "日本語" in prompt or "Japanese" in prompt:
+                enhanced_prompt += "。日本語の歌詞を含めてください。"
+            else:
+                enhanced_prompt += ". Include meaningful lyrics."
+            print(f"Enhanced prompt for lyrics: '{enhanced_prompt}'")
+        
+        # リクエストデータを準備（Suno APIのドキュメントに基づく正しい形式）
         data = {
-            "prompt": prompt,
+            "prompt": enhanced_prompt,
             "style": reference_style if reference_style else "",
             "title": f"Generated Music {task_id[:8]}",
             "customMode": True,
-            "instrumental": not with_lyrics,  # with_lyricsの逆がinstrumental
+            "instrumental": not with_lyrics,
             "model": formatted_model,
             "taskId": task_id,
             "callBackUrl": callback_url
@@ -155,53 +180,32 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
         if negative_tags:
             data["negativeTags"] = negative_tags
         
-        # 歌詞付き音楽生成の場合、プロンプトに歌詞に関する指示を追加
-        if with_lyrics and "歌詞" not in prompt and "lyrics" not in prompt.lower():
-            # プロンプトに歌詞に関する指示がない場合、自動的に追加
-            if "日本語" in prompt or "Japanese" in prompt:
-                data["prompt"] += "。日本語の歌詞を含めてください。"
-            else:
-                data["prompt"] += ". Include meaningful lyrics."
-            print(f"Enhanced prompt for lyrics: '{data['prompt']}'")
-        
         print(f"Request data: {json.dumps(data, ensure_ascii=False)}")
         
         # APIリクエストを送信
-        headers = {
-            "Authorization": f"Bearer {SUNO_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(api_url, headers=headers, json=data)
-        
-        # レスポンスの確認
-        if response.status_code != 200:
-            return {
-                "error": f"API request failed with status code {response.status_code}",
-                "details": response.text
-            }
-        
-        response_data = response.json()
-        print(f"Response data: {json.dumps(response_data, ensure_ascii=False)}")
-        
-        # 成功レスポンスの処理
-        if response_data.get("code") == 200:
-            result = {
-                "success": True,
-                "task_id": task_id,
-                "message": "Music generation request submitted successfully"
-            }
+        try:
+            response_data = call_suno_api(api_endpoint, data)
+            print(f"Response data: {json.dumps(response_data, ensure_ascii=False)}")
             
-            # 生成完了を待つ場合
-            if wait_for_completion:
-                # ここでは待機処理は行わず、コールバックに任せる
-                result["message"] += ". Waiting for callback notification."
-            
-            return result
-        else:
+            # 成功レスポンスの処理
+            if response_data.get("code") == 200:
+                result = {
+                    "success": True,
+                    "status": "pending",
+                    "task_id": task_id,
+                    "message": "Music generation request submitted successfully"
+                }
+                
+                return result
+            else:
+                return {
+                    "error": "API request failed",
+                    "details": response_data
+                }
+        except Exception as api_error:
+            print(f"API call failed: {str(api_error)}")
             return {
-                "error": "API request failed",
-                "details": response_data
+                "error": f"API call failed: {str(api_error)}"
             }
     
     except Exception as e:
@@ -236,7 +240,7 @@ def check_generation_status(task_id):
             "taskId": task_id
         }
         
-        # 状態確認APIを呼び出す
+        # 状態確認APIを呼び出す - 正しいエンドポイントを使用
         result = call_suno_api("/api/v1/status", data, max_retries=1)
         
         # レスポンスからデータを取得

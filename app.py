@@ -111,11 +111,6 @@ def api_docs():
                 "path": "/clear-callbacks",
                 "method": "POST",
                 "description": "保存されているすべてのコールバックデータをクリアするエンドポイント"
-            },
-            {
-                "path": "/dashboard",
-                "method": "GET",
-                "description": "シンプルなダッシュボードを表示するエンドポイント"
             }
         ],
         "default_prompt": DEFAULT_PROMPT
@@ -407,16 +402,24 @@ def callback():
             })
         
         # 最新のタスクIDを取得
-        latest_task_id = max(callback_data.keys(), key=lambda k: callback_data[k].get("timestamp", ""))
-        latest_data = callback_data[latest_task_id]
-        
-        return jsonify({
-            "status": "success",
-            "message": "Latest callback data",
-            "task_id": latest_task_id,
-            "timestamp": latest_data.get("timestamp"),
-            "data": latest_data.get("data")
-        })
+        try:
+            latest_task_id = max(callback_data.keys(), key=lambda k: callback_data[k].get("timestamp", ""))
+            latest_data = callback_data[latest_task_id]
+            
+            return jsonify({
+                "status": "success",
+                "message": "Latest callback data",
+                "task_id": latest_task_id,
+                "timestamp": latest_data.get("timestamp"),
+                "data": latest_data.get("data")
+            })
+        except Exception as e:
+            print(f"Error retrieving callback data: {str(e)}")
+            return jsonify({
+                "status": "error",
+                "message": f"Error retrieving callback data: {str(e)}",
+                "callback_data_keys": list(callback_data.keys())
+            })
     
     # POSTリクエストの場合
     try:
@@ -459,46 +462,72 @@ def list_callbacks():
     """
     保存されているすべてのコールバックデータを一覧表示するエンドポイント
     """
-    if not callback_data:
+    try:
+        print(f"Listing all callbacks. Available keys: {list(callback_data.keys())}")
+        
+        if not callback_data:
+            return jsonify({
+                "status": "No callback data available",
+                "message": "No callbacks have been received yet"
+            })
+        
+        # コールバックデータの概要を作成
+        callback_summary = {}
+        for task_id, data in callback_data.items():
+            callback_summary[task_id] = {
+                "timestamp": data.get("timestamp"),
+                "status": data.get("data", {}).get("code", "unknown"),
+                "message": data.get("data", {}).get("msg", "No message")
+            }
+        
         return jsonify({
-            "status": "No callback data available",
-            "message": "No callbacks have been received yet"
+            "status": "success",
+            "message": "All callback data",
+            "count": len(callback_data),
+            "callbacks": callback_summary
         })
-    
-    # コールバックデータの概要を作成
-    callback_summary = {}
-    for task_id, data in callback_data.items():
-        callback_summary[task_id] = {
-            "timestamp": data.get("timestamp"),
-            "status": data.get("data", {}).get("code", "unknown"),
-            "message": data.get("data", {}).get("msg", "No message")
-        }
-    
-    return jsonify({
-        "status": "success",
-        "message": "All callback data",
-        "count": len(callback_data),
-        "callbacks": callback_summary
-    })
+    except Exception as e:
+        print(f"Error listing callbacks: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"Error listing callbacks: {str(e)}"
+        }), 500
 
 @app.route('/callback/<task_id>', methods=['GET'])
 def get_callback(task_id):
     """
     特定のタスクIDに対するコールバックデータを取得するエンドポイント
     """
-    if task_id not in callback_data:
+    try:
+        print(f"Accessing callback data for task_id: {task_id}")
+        print(f"Available callback keys: {list(callback_data.keys())}")
+        
+        if task_id not in callback_data:
+            print(f"Task ID {task_id} not found in callback_data")
+            return jsonify({
+                "status": "not_found",
+                "message": f"No callback data found for task_id: {task_id}",
+                "available_tasks": list(callback_data.keys())
+            }), 404
+        
+        print(f"Found callback data for task_id: {task_id}")
         return jsonify({
-            "status": "not_found",
-            "message": f"No callback data found for task_id: {task_id}"
-        }), 404
-    
-    return jsonify({
-        "status": "success",
-        "message": f"Callback data for task_id: {task_id}",
-        "task_id": task_id,
-        "timestamp": callback_data[task_id].get("timestamp"),
-        "data": callback_data[task_id].get("data")
-    })
+            "status": "success",
+            "message": f"Callback data for task_id: {task_id}",
+            "task_id": task_id,
+            "timestamp": callback_data[task_id].get("timestamp"),
+            "data": callback_data[task_id].get("data")
+        })
+    except Exception as e:
+        print(f"Error retrieving callback data for task_id {task_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"Error retrieving callback data: {str(e)}"
+        }), 500
 
 @app.route('/simulate-callback', methods=['POST'])
 def simulate_callback():
