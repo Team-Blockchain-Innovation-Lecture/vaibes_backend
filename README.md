@@ -32,6 +32,18 @@ curl -X POST "http://localhost:5001/api/generate" \
     "model_version": "v3.5"
   }'
 ```
+
+```
+curl -X POST "https://b94d-203-136-72-13.ngrok-free.app/api/generate-with-callback" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "クールなEDMで「バイブス」と歌って",
+    "genre": "EDM",
+    "instrumental": false,
+    "model_version": "v4",
+    "timeout": 60
+  }'
+```
 ngrokをインストール
 ```bash
 brew install ngrok

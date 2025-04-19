@@ -141,11 +141,12 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
         # タスクIDの生成（一意の識別子）
         task_id = str(uuid.uuid4())
         
-        # コールバックURLの設定 - httpsからhttpに修正
+        # コールバックURLの設定
         callback_url = CALLBACK_URL
-        if callback_url.startswith("http://"):
+        # 確実にhttpsにする（Sunoのコールバックはhttpsを要求）
+        if not callback_url.startswith("https://"):
             callback_url = callback_url.replace("http://", "https://")
-        print(f"Callback URL: {callback_url}")
+        print(f"Using callback URL: {callback_url}")
         # ローカル開発環境の場合、コールバックURLを確認
         if "localhost" in callback_url or "127.0.0.1" in callback_url:
             print(f"警告: ローカルURLへのコールバックは外部から到達できない可能性があります: {callback_url}")
