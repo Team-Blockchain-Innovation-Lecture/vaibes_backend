@@ -111,6 +111,16 @@ def api_docs():
                 "path": "/clear-callbacks",
                 "method": "POST",
                 "description": "保存されているすべてのコールバックデータをクリアするエンドポイント"
+            },
+            {
+                "path": "/api/generate-mp4",
+                "method": "POST",
+                "description": "MP4ビデオを生成するAPIエンドポイント"
+            },
+            {
+                "path": "/api/check-mp4-status",
+                "method": "POST",
+                "description": "MP4生成の状態を確認するAPIエンドポイント"
             }
         ],
         "default_prompt": DEFAULT_PROMPT
@@ -598,6 +608,117 @@ def clear_callbacks():
             "success": False,
             "error": str(e)
         }), 500
+
+@app.route('/api/generate-mp4', methods=['POST'])
+def api_generate_mp4():
+    """
+    MP4ビデオを生成するAPIエンドポイント
+    """
+    try:
+        # リクエストからデータを取得
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "無効なJSONデータ"}), 400
+            
+        task_id = data.get('task_id')
+        audio_id = data.get('audio_id')
+        author = data.get('author', 'AI Music Creator')
+        domain_name = data.get('domain_name')
+        
+        if not task_id:
+            return jsonify({"error": "task_idは必須です"}), 400
+        
+        # MP4生成関数を呼び出す
+        from modules.music.generator import generate_mp4_video
+        result = generate_mp4_video(task_id, audio_id, author, domain_name)
+        
+        if result and "error" in result:
+            return jsonify(result), 400
+            
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"MP4生成APIでエラーが発生: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/check-mp4-status', methods=['POST'])
+def api_check_mp4_status():
+    """
+    MP4生成の状態を確認するAPIエンドポイント
+    """
+    try:
+        # リクエストからデータを取得
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "無効なJSONデータ"}), 400
+            
+        task_id = data.get('task_id')
+        
+        if not task_id:
+            return jsonify({"error": "task_idは必須です"}), 400
+        
+        # コールバックデータを確認
+        if task_id in callback_data:
+            callback_info = callback_data[task_id]
+            callback_data_content = callback_info.get("data", {})
+            
+            # MP4 URLを探す
+            mp4_url = None
+            
+            # コールバックデータの構造に基づいて探索
+            if "data" in callback_data_content and isinstance(callback_data_content["data"], dict):
+                if "data" in callback_data_content["data"] and isinstance(callback_data_content["data"]["data"], list):
+                    for item in callback_data_content["data"]["data"]:
+                        if "video_url" in item:
+                            mp4_url = item["video_url"]
+                            break
+            
+            if mp4_url:
+                return jsonify({
+                    "success": True,
+                    "status": "success",
+                    "task_id": task_id,
+                    "mp4_url": mp4_url,
+                    "timestamp": callback_info.get("timestamp")
+                })
+        
+        # コールバックデータがない場合は、APIで状態を確認
+        from modules.music.generator import check_generation_status
+        status_result = check_generation_status(task_id)
+        
+        if not status_result:
+            return jsonify({
+                "success": False,
+                "status": "unknown",
+                "task_id": task_id,
+                "message": "状態を取得できませんでした"
+            }), 404
+            
+        # MP4 URLを探す
+        mp4_url = status_result.get("videoUrl")
+        
+        if mp4_url:
+            return jsonify({
+                "success": True,
+                "status": "success",
+                "task_id": task_id,
+                "mp4_url": mp4_url
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "status": "pending",
+                "task_id": task_id,
+                "message": "MP4はまだ生成中です"
+            })
+        
+    except Exception as e:
+        print(f"MP4状態確認APIでエラーが発生: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     # 環境変数からポート番号を取得（デフォルトは5001）

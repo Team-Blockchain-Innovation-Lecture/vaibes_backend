@@ -143,9 +143,9 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
         
         # コールバックURLの設定 - httpsからhttpに修正
         callback_url = CALLBACK_URL
-        if callback_url.startswith("https://"):
-            callback_url = callback_url.replace("https://", "http://")
-        
+        if callback_url.startswith("http://"):
+            callback_url = callback_url.replace("http://", "https://")
+        print(f"Callback URL: {callback_url}")
         # ローカル開発環境の場合、コールバックURLを確認
         if "localhost" in callback_url or "127.0.0.1" in callback_url:
             print(f"警告: ローカルURLへのコールバックは外部から到達できない可能性があります: {callback_url}")
@@ -289,38 +289,104 @@ def get_wav_format(task_id):
         print(f"Error getting WAV format: {str(e)}")
         return None
 
-def generate_mp4_video(task_id):
+def generate_mp4_video(task_id, audio_id=None, author="AI Music Creator", domain_name=None):
     """
-    生成された音楽からMP4ビデオを生成する関数
+    Suno APIを使用してMP4ビデオを生成する関数
     
     Args:
         task_id: タスクID
+        audio_id: 音声ID（指定しない場合はタスクIDから取得）
+        author: 作者名
+        domain_name: ドメイン名
         
     Returns:
-        MP4ビデオURL
+        生成されたMP4ビデオのURL
     """
     try:
         print(f"\nGenerating MP4 video for task {task_id}...")
         
-        # 状態を確認して完了しているか確認
-        status_result = check_generation_status(task_id)
-        if not status_result or status_result.get("status") != "success":
-            print("ERROR: Task not completed")
-            return None
-            
-        # MP4 URLを取得
-        mp4_url = status_result.get("videoUrl")
+        # APIキーの確認
+        if not SUNO_API_KEY:
+            print("ERROR: SUNO_API_KEY is not set")
+            return {"error": "SUNO_API_KEY is not set in environment variables"}
         
-        if mp4_url:
-            print(f"MP4 URL: {mp4_url}")
-            return mp4_url
+        # 音声IDが指定されていない場合は、タスクIDから状態を確認して取得
+        if not audio_id:
+            status_result = check_generation_status(task_id)
+            if not status_result or status_result.get("status") != "success":
+                print("ERROR: Task not completed or audio_id not available")
+                return {"error": "Task not completed or audio_id not available"}
+                
+            # 音声IDを取得（APIレスポンスの形式に依存）
+            if "data" in status_result and isinstance(status_result["data"], list) and len(status_result["data"]) > 0:
+                audio_id = status_result["data"][0].get("id")
+            
+            if not audio_id:
+                print("ERROR: Could not find audio_id in task status")
+                return {"error": "Could not find audio_id in task status"}
+        
+        # コールバックURLの設定
+        callback_url = os.getenv("CALLBACK_URL")
+        if not callback_url:
+            print("WARNING: CALLBACK_URL is not set")
+            callback_url = "http://localhost:5001/callback"
+        
+        # ドメイン名が指定されていない場合はデフォルト値を使用
+        if not domain_name:
+            domain_name = "music.example.com"
+        
+        # リクエストデータを準備
+        data = {
+            "taskId": task_id,
+            "audioId": audio_id,
+            "callBackUrl": callback_url,
+            "author": author,
+            "domainName": domain_name
+        }
+        
+        print(f"MP4 generation request data: {json.dumps(data, ensure_ascii=False)}")
+        
+        # MP4生成APIを呼び出す
+        result = call_suno_api("/api/v1/mp4/generate", data)
+        
+        # レスポンスを処理
+        response_data = result.get("data", {})
+        
+        # 成功レスポンスの処理
+        if result.get("code") == 200:
+            print(f"MP4 generation request submitted successfully")
+            
+            # レスポンスからMP4 URLを取得
+            mp4_url = response_data.get("videoUrl")
+            
+            if mp4_url:
+                print(f"MP4 URL: {mp4_url}")
+                return {
+                    "success": True,
+                    "task_id": task_id,
+                    "audio_id": audio_id,
+                    "mp4_url": mp4_url
+                }
+            else:
+                # MP4 URLがない場合は、タスクIDを返して後で確認できるようにする
+                print("MP4 URL not available yet, check status later")
+                return {
+                    "success": True,
+                    "status": "pending",
+                    "task_id": task_id,
+                    "audio_id": audio_id,
+                    "message": "MP4 generation request submitted, check status later"
+                }
         else:
-            print("No MP4 URL in response")
-            return None
+            error_msg = f"MP4 generation failed: {result.get('msg')}"
+            print(f"ERROR: {error_msg}")
+            return {"error": error_msg}
             
     except Exception as e:
         print(f"Error generating MP4 video: {str(e)}")
-        return None
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
 
 def generate_lyrics(prompt):
     """
