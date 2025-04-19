@@ -33,15 +33,27 @@ curl -X POST "http://localhost:5001/api/generate" \
   }'
 ```
 
+### コールバック含めた音楽生成
 ```
 curl -X POST "https://b94d-203-136-72-13.ngrok-free.app/api/generate-with-callback" \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "クールなEDMで「バイブス」と歌って",
+    "prompt": "Silk‑lined shadows weave across the boulevard,Reflections dancing on a midnight silver car.City lights whisper in a fever‑dream glow,Every step a rhythm only restless hearts can know.Sparks in our veins start to flicker and ignite, Two silhouettes colliding in electric twilight.Under velvet neon nights, we’re weightless, floating high; Gravity’s a rumor that the skyline can’t deny. Paint my name across the stars, let the cosmos hear our vows Love is louder than the city, and the night belongs to us now.",
     "genre": "EDM",
     "instrumental": false,
     "model_version": "v4",
     "timeout": 60
+  }'
+```
+
+### 動画生成
+```
+curl -X POST "https://b94d-203-136-72-13.ngrok-free.app/api/generate-mp4-with-callback" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "task_id": "3d0b0a98db30def485e329152af69b07",
+    "audio_id": "e13cdf72-176a-4b8d-9643-f6d650642885",
+    "author" : "Omatsu"
   }'
 ```
 ngrokをインストール

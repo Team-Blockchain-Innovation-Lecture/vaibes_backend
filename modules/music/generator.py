@@ -334,7 +334,7 @@ def generate_mp4_video(task_id, audio_id=None, author="AI Music Creator", domain
         
         # ドメイン名が指定されていない場合はデフォルト値を使用
         if not domain_name:
-            domain_name = "music.example.com"
+            domain_name = "https://vaibes.fun/"
         
         # リクエストデータを準備
         data = {
