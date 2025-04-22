@@ -847,8 +847,8 @@ def api_generate_mp4_with_callback():
                     cb_data = cb.get("data", {})
                     
                     # MP4コールバックの特徴: video_urlキーが存在
-                    if "data" in cb_data and "video_url" in cb_data.get("data", {}):
-                        print(f"Found MP4 callback with video_url in new callback: {key}")
+                    if "data" in cb_data and ("video_url" in cb_data.get("data", {}) or "stream_video_url" in cb_data.get("data", {})):
+                        print(f"Found MP4 callback with video URL in new callback: {key}")
                         return cb
                     
                     # data内のキーや値に動画関連の文字列が含まれているか確認
@@ -875,6 +875,22 @@ def api_generate_mp4_with_callback():
                 # コールバックデータをそのまま返す（データの中身だけ）
                 raw_callback_data = cb_data.get("data", {})
                 
+                # ストリーミングURLが含まれていない場合は追加
+                if "data" in raw_callback_data and "video_url" in raw_callback_data["data"]:
+                    video_url = raw_callback_data["data"]["video_url"]
+                    
+                    # ストリーミングURLがない場合は通常のURLから生成
+                    if "stream_video_url" not in raw_callback_data["data"]:
+                        # URLを変換してストリーミングURLを追加
+                        # 例: example.com/file.mp4 → example.com/stream/file.mp4
+                        stream_url = video_url
+                        if ".mp4" in video_url:
+                            stream_url = video_url.replace(".mp4", "_stream.mp4")
+                        
+                        # ストリーミングURLを追加
+                        raw_callback_data["data"]["stream_video_url"] = stream_url
+                        print(f"Added stream_video_url: {stream_url}")
+                
                 # 直接コールバックデータの内容をそのまま返す
                 return jsonify(raw_callback_data)
             
@@ -890,12 +906,19 @@ def api_generate_mp4_with_callback():
                     
                     if mp4_url:
                         print(f"MP4 URL found via status check: {mp4_url}")
+                        
+                        # ストリーミングURLを生成
+                        stream_url = mp4_url
+                        if ".mp4" in mp4_url:
+                            stream_url = mp4_url.replace(".mp4", "_stream.mp4")
+                        
                         # コールバックデータと完全に同じ形式で返す
                         return jsonify({
                             "code": 200,
                             "data": {
                                 "task_id": mp4_task_id,
-                                "video_url": mp4_url
+                                "video_url": mp4_url,
+                                "stream_video_url": stream_url
                             },
                             "msg": "All generated successfully."
                         })

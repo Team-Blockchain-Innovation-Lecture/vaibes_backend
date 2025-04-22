@@ -35,14 +35,14 @@ curl -X POST "http://localhost:5001/api/generate" \
 
 ### コールバック含めた音楽生成
 ```
-curl -X POST "https://b94d-203-136-72-13.ngrok-free.app/api/generate-with-callback" \
+curl -X POST "https://ae73-240b-10-27c1-7e00-2425-9b44-c411-f7a7.ngrok-free.app/api/generate-with-callback" \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "Silk‑lined shadows weave across the boulevard,Reflections dancing on a midnight silver car.City lights whisper in a fever‑dream glow,Every step a rhythm only restless hearts can know.Sparks in our veins start to flicker and ignite, Two silhouettes colliding in electric twilight.Under velvet neon nights, we’re weightless, floating high; Gravity’s a rumor that the skyline can’t deny. Paint my name across the stars, let the cosmos hear our vows Love is louder than the city, and the night belongs to us now.",
     "genre": "EDM",
     "instrumental": false,
     "model_version": "v4",
-    "timeout": 60
+    "timeout": 90
   }'
 ```
 
@@ -51,8 +51,8 @@ curl -X POST "https://b94d-203-136-72-13.ngrok-free.app/api/generate-with-callba
 curl -X POST "https://b94d-203-136-72-13.ngrok-free.app/api/generate-mp4-with-callback" \
   -H "Content-Type: application/json" \
   -d '{
-    "task_id": "3d0b0a98db30def485e329152af69b07",
-    "audio_id": "e13cdf72-176a-4b8d-9643-f6d650642885",
+    "task_id": "0e471d75a5ad51c7d1675ab54b020f3c",
+    "audio_id": "5cf62da6-b180-4df2-af98-eec3a7d14b5d",
     "author" : "Omatsu"
   }'
 ```
@@ -72,7 +72,7 @@ ngrok http 5001
 
 ngrokのURLを環境変数に設定
 ```bash
-export CALLBACK_URL=https://bc73-122-222-70-231.ngrok-free.app/callback
+export CALLBACK_URL=https://ae73-240b-10-27c1-7e00-2425-9b44-c411-f7a7.ngrok-free.app/callback
 ```
 
 
