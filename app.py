@@ -22,6 +22,9 @@ DEFAULT_PROMPT = "ジャズとクラシックが融合した落ち着いた雰�
 # コールバックデータを保存するためのディクショナリ
 callback_data = {}
 
+# リクエストIDとタスクIDのマッピングを保存するためのディクショナリ
+app.request_task_mapping = {}
+
 # ルートエンドポイント: APIドキュメント
 @app.route('/')
 def api_docs():
@@ -377,16 +380,19 @@ def callback():
             print("Error: Invalid JSON data in callback")
             return jsonify({"error": "Invalid JSON data"}), 400
         
-        print(f"Received callback data: {json.dumps(data, ensure_ascii=False)}")
+        print(f"★★★ Received callback data: {json.dumps(data, ensure_ascii=False)[:500]}... ★★★")
         
         # タスクIDを取得（Sunoのコールバック形式に合わせる）
         task_id = None
         if "data" in data and "task_id" in data["data"]:
             task_id = data["data"]["task_id"]
+            print(f"★★★ Found task_id in data.data.task_id: {task_id} ★★★")
         elif "taskId" in data:
             task_id = data["taskId"]
+            print(f"★★★ Found task_id in taskId: {task_id} ★★★")
         elif "task_id" in data:
             task_id = data["task_id"]
+            print(f"★★★ Found task_id in task_id: {task_id} ★★★")
             
         if not task_id:
             print(f"Warning: No task_id in callback data, searching in nested data")
@@ -407,6 +413,8 @@ def callback():
                 return None
                 
             task_id = find_task_id(data)
+            if task_id:
+                print(f"★★★ Found task_id in nested data: {task_id} ★★★")
             
         if not task_id:
             print(f"Warning: No task_id found in callback data")
@@ -417,12 +425,16 @@ def callback():
             print(f"Found task_id in callback data: {task_id}")
         
         # コールバックデータを保存
+        callback_time = datetime.now().isoformat()
         callback_data[task_id] = {
             "data": data,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": callback_time
         }
         
-        print(f"Stored callback data for task_id: {task_id}")
+        print(f"★★★ Stored callback data for task_id: {task_id} ★★★")
+        print(f"★★★ Available callback keys after storing: {list(callback_data.keys())} ★★★")
+        
+        # 通常のレスポンスを返す
         return jsonify({"success": True, "task_id": task_id})
         
     except Exception as e:
@@ -640,7 +652,10 @@ def generate_audio_with_callback():
         genre = data.get('genre', '')
         instrumental = data.get('instrumental', False)
         model_version = data.get('model_version', 'v4')
-        timeout = data.get('timeout', 120)  # タイムアウトを2分に延長
+        timeout = data.get('timeout', 600)  # タイムアウトを10分に延長
+        request_id = data.get('request_id', str(uuid.uuid4()))  # リクエスト識別用ID（クライアントから送信されるか、自動生成）
+        
+        print(f"★★★ Received generate request with request_id: {request_id} ★★★")
         
         # 音楽生成をリクエスト
         result = generate_music_with_suno(
@@ -655,18 +670,24 @@ def generate_audio_with_callback():
             
         # タスクIDを取得
         task_id = result.get('task_id')
-        print(f"Task ID: {task_id}, waiting for callback...")
+        print(f"★★★ Task ID: {task_id} for request_id: {request_id}, waiting for callback... ★★★")
+        
+        # リクエストIDとタスクIDのマッピングを保存（将来的な拡張のため）
+        request_task_mapping = getattr(app, 'request_task_mapping', {})
+        request_task_mapping[request_id] = task_id
+        app.request_task_mapping = request_task_mapping
         
         # コールバックデータのキーを監視する関数（task_idの形式が異なる場合に対応）
         def find_matching_callback():
             # 完全一致
             if task_id in callback_data:
+                print(f"★★★ Found exact match callback for task_id: {task_id}, request_id: {request_id} ★★★")
                 return callback_data[task_id]
             
             # 部分一致（タスクIDの一部が含まれるキーを探す）
             for key in callback_data.keys():
                 if task_id in key or key in task_id:
-                    print(f"Found callback with partial match: {key}")
+                    print(f"★★★ Found callback with partial match: {key} for request_id: {request_id} ★★★")
                     return callback_data[key]
                     
             # コールバックデータ内のJSONを検索
@@ -676,10 +697,24 @@ def generate_audio_with_callback():
                     # data内のtask_idを確認
                     data_obj = cb_data.get("data", {})
                     if isinstance(data_obj, dict) and data_obj.get("task_id") == task_id:
-                        print(f"Found task_id in nested data: {key}")
+                        print(f"★★★ Found task_id in nested data: {key} for request_id: {request_id} ★★★")
                         return cb
                         
             return None
+            
+        # 先にコールバックが来ていないか確認（すでに処理済みの場合）
+        cb_data = find_matching_callback()
+        if cb_data:
+            print(f"★★★ Callback already received for task {task_id}, request_id: {request_id} - returning immediately ★★★")
+            return jsonify({
+                "success": True,
+                "task_id": task_id,
+                "request_id": request_id,
+                "status": "completed",
+                "callback_data": cb_data,
+                "matched_callback_id": task_id,
+                "message": "音楽生成が完了しました（コールバックはすでに受信済み）"
+            })
         
         # コールバックを待つ
         start_time = time.time()
@@ -687,13 +722,16 @@ def generate_audio_with_callback():
             # マッチするコールバックを探す
             cb_data = find_matching_callback()
             if cb_data:
-                print(f"Callback found for task {task_id}")
+                print(f"★★★ Callback found for task {task_id}, request_id: {request_id} - returning immediately without waiting for timeout ★★★")
                 
+                # コールバックを受信したらすぐに返す（タイムアウトを待たない）
                 return jsonify({
                     "success": True,
                     "task_id": task_id,
+                    "request_id": request_id,
                     "status": "completed",
                     "callback_data": cb_data,
+                    "matched_callback_id": task_id,
                     "message": "音楽生成が完了しました"
                 })
             
@@ -703,25 +741,26 @@ def generate_audio_with_callback():
                 status_result = check_generation_status(task_id)
                 
                 if status_result and status_result.get("status") == "success":
-                    print(f"Task {task_id} completed successfully (via status check)")
+                    print(f"★★★ Task {task_id}, request_id: {request_id} completed successfully (via status check) - returning immediately without waiting for timeout ★★★")
                     return jsonify({
                         "success": True,
                         "task_id": task_id,
+                        "request_id": request_id,
                         "status": "completed",
                         "result": status_result,
                         "message": "音楽生成が完了しました"
                     })
             except Exception as status_error:
-                print(f"Status check error (non-fatal): {str(status_error)}")
+                print(f"Status check error (non-fatal) for request_id: {request_id}: {str(status_error)}")
             
             # 一定時間待機
             time.sleep(2)
             
             # コールバックデータがあるか確認（このチェックを毎回行う）
-            print(f"Waiting for callback, elapsed time: {int(time.time() - start_time)}s, available keys: {list(callback_data.keys())}")
+            print(f"Waiting for callback, request_id: {request_id}, elapsed time: {int(time.time() - start_time)}s, available keys: {list(callback_data.keys())}")
         
         # タイムアウトした場合、利用可能なコールバックデータがあれば返す
-        print(f"Timeout reached. Looking for any available callback data.")
+        print(f"Timeout reached for request_id: {request_id}. Looking for any available callback data.")
         for key, value in callback_data.items():
             # コールバックデータの生成時刻を確認
             callback_time = datetime.fromisoformat(value.get("timestamp", ""))
@@ -729,10 +768,11 @@ def generate_audio_with_callback():
             
             # リクエスト後に生成されたコールバックデータを探す
             if callback_time > request_time:
-                print(f"Found callback data created after request: {key}")
+                print(f"Found callback data created after request: {key} for request_id: {request_id}")
                 return jsonify({
                     "success": True,
                     "task_id": task_id,
+                    "request_id": request_id,
                     "matched_callback_id": key,
                     "status": "completed",
                     "callback_data": value,
@@ -742,6 +782,7 @@ def generate_audio_with_callback():
         return jsonify({
             "success": True,
             "task_id": task_id,
+            "request_id": request_id,
             "status": "processing",
             "message": f"タイムアウトしました。処理は続行中です。/api/check-status で状態を確認してください。"
         })
@@ -768,6 +809,9 @@ def api_generate_mp4_with_callback():
         author = data.get('author', 'AI Music Creator')
         domain_name = data.get('domain_name')
         timeout = data.get('timeout', 180)  # タイムアウトを3分に延長
+        request_id = data.get('request_id', str(uuid.uuid4()))  # リクエスト識別用ID
+        
+        print(f"★★★ Received MP4 generate request with request_id: {request_id} ★★★")
         
         if not task_id:
             return jsonify({"error": "task_idは必須です"}), 400
@@ -782,7 +826,7 @@ def api_generate_mp4_with_callback():
                     if isinstance(music_items, list) and len(music_items) > 0:
                         # 最初の音楽アイテムのIDを使用
                         audio_id = music_items[0].get("id")
-                        print(f"Using first audio ID from callback data: {audio_id}")
+                        print(f"Using first audio ID from callback data: {audio_id} for request_id: {request_id}")
         
         if not audio_id:
             return jsonify({"error": "audio_idが指定されておらず、コールバックデータからも取得できませんでした"}), 400
@@ -795,7 +839,7 @@ def api_generate_mp4_with_callback():
                 mp4_callbacks_to_remove.append(key)
                 
         for key in mp4_callbacks_to_remove:
-            print(f"Removing old MP4 callback: {key}")
+            print(f"Removing old MP4 callback: {key} for request_id: {request_id}")
             del callback_data[key]
         
         # MP4リクエスト時刻を記録
@@ -813,13 +857,19 @@ def api_generate_mp4_with_callback():
             
         # MP4生成のタスクID
         mp4_task_id = result.get("task_id")
-        print(f"MP4 Task ID: {mp4_task_id}, waiting for callback...")
+        print(f"★★★ MP4 Task ID: {mp4_task_id} for request_id: {request_id}, waiting for callback... ★★★")
+        
+        # リクエストIDとタスクIDのマッピングを保存
+        request_task_mapping = getattr(app, 'request_task_mapping', {})
+        request_task_mapping[request_id] = mp4_task_id
+        app.request_task_mapping = request_task_mapping
         
         # MP4リクエスト情報をグローバルに保存（コールバック照合用）
         mp4_request_info = {
             "mp4_task_id": mp4_task_id,
             "original_task_id": task_id,
             "audio_id": audio_id,
+            "request_id": request_id,
             "request_time": mp4_request_time
         }
         
@@ -831,7 +881,7 @@ def api_generate_mp4_with_callback():
                 # 確認: コールバックデータにvideo_urlが含まれているか
                 raw_data = cb_data.get("data", {})
                 if "data" in raw_data and "video_url" in raw_data.get("data", {}):
-                    print(f"Found MP4 callback by task_id: {mp4_task_id}")
+                    print(f"★★★ Found MP4 callback by task_id: {mp4_task_id} for request_id: {request_id} ★★★")
                     return cb_data
             
             # コールバックデータ内を検索
@@ -842,13 +892,13 @@ def api_generate_mp4_with_callback():
                     
                 # リクエスト後に新しく追加されたコールバックか確認
                 if key not in callback_data_keys_before:
-                    print(f"Checking new callback: {key}")
+                    print(f"Checking new callback: {key} for request_id: {request_id}")
                     
                     cb_data = cb.get("data", {})
                     
                     # MP4コールバックの特徴: video_urlキーが存在
                     if "data" in cb_data and ("video_url" in cb_data.get("data", {}) or "stream_video_url" in cb_data.get("data", {})):
-                        print(f"Found MP4 callback with video URL in new callback: {key}")
+                        print(f"★★★ Found MP4 callback with video URL in new callback: {key} for request_id: {request_id} ★★★")
                         return cb
                     
                     # data内のキーや値に動画関連の文字列が含まれているか確認
@@ -856,7 +906,7 @@ def api_generate_mp4_with_callback():
                         data_found = False
                         for k, v in cb_data.items():
                             if isinstance(v, str) and (".mp4" in v.lower() or "video" in v.lower()):
-                                print(f"Found MP4 URL in callback data: {key}, value: {v[:30]}...")
+                                print(f"★★★ Found MP4 URL in callback data: {key}, value: {v[:30]}... for request_id: {request_id} ★★★")
                                 data_found = True
                                 break
                         if data_found:
@@ -864,13 +914,43 @@ def api_generate_mp4_with_callback():
                         
             return None
         
+        # 先にコールバックが来ていないか確認
+        cb_data = find_mp4_callback()
+        if cb_data:
+            print(f"★★★ MP4 callback already received for request_id: {request_id} - returning immediately ★★★")
+            
+            # コールバックデータをそのまま返す（データの中身だけ）
+            raw_callback_data = cb_data.get("data", {})
+            
+            # ストリーミングURLが含まれていない場合は追加
+            if "data" in raw_callback_data and "video_url" in raw_callback_data["data"]:
+                video_url = raw_callback_data["data"]["video_url"]
+                
+                # ストリーミングURLがない場合は通常のURLから生成
+                if "stream_video_url" not in raw_callback_data["data"]:
+                    # URLを変換してストリーミングURLを追加
+                    stream_url = video_url
+                    if ".mp4" in video_url:
+                        stream_url = video_url.replace(".mp4", "_stream.mp4")
+                    
+                    # ストリーミングURLを追加
+                    raw_callback_data["data"]["stream_video_url"] = stream_url
+                    print(f"Added stream_video_url: {stream_url} for request_id: {request_id}")
+            
+            # リクエストIDを追加
+            if "data" in raw_callback_data:
+                raw_callback_data["data"]["request_id"] = request_id
+            
+            # 直接コールバックデータの内容をそのまま返す
+            return jsonify(raw_callback_data)
+            
         # MP4のタスクIDに関連するコールバックを待つ
         start_time = time.time()
         while time.time() - start_time < timeout:
             # MP4コールバックを探す
             cb_data = find_mp4_callback()
             if cb_data:
-                print(f"MP4 callback found, returning data")
+                print(f"★★★ MP4 callback found for request_id: {request_id}, returning data ★★★")
                 
                 # コールバックデータをそのまま返す（データの中身だけ）
                 raw_callback_data = cb_data.get("data", {})
@@ -889,7 +969,11 @@ def api_generate_mp4_with_callback():
                         
                         # ストリーミングURLを追加
                         raw_callback_data["data"]["stream_video_url"] = stream_url
-                        print(f"Added stream_video_url: {stream_url}")
+                        print(f"Added stream_video_url: {stream_url} for request_id: {request_id}")
+                
+                # リクエストIDを追加
+                if "data" in raw_callback_data:
+                    raw_callback_data["data"]["request_id"] = request_id
                 
                 # 直接コールバックデータの内容をそのまま返す
                 return jsonify(raw_callback_data)
@@ -905,7 +989,7 @@ def api_generate_mp4_with_callback():
                     mp4_url = status_result.get("videoUrl")
                     
                     if mp4_url:
-                        print(f"MP4 URL found via status check: {mp4_url}")
+                        print(f"★★★ MP4 URL found via status check: {mp4_url} for request_id: {request_id} ★★★")
                         
                         # ストリーミングURLを生成
                         stream_url = mp4_url
@@ -917,33 +1001,35 @@ def api_generate_mp4_with_callback():
                             "code": 200,
                             "data": {
                                 "task_id": mp4_task_id,
+                                "request_id": request_id,
                                 "video_url": mp4_url,
                                 "stream_video_url": stream_url
                             },
                             "msg": "All generated successfully."
                         })
             except Exception as status_error:
-                print(f"MP4 status check error (non-fatal): {str(status_error)}")
+                print(f"MP4 status check error (non-fatal) for request_id: {request_id}: {str(status_error)}")
             
             # 一定時間待機
             time.sleep(2)
             
             # 進捗を表示
-            print(f"Waiting for MP4 callback, elapsed time: {int(time.time() - start_time)}s, available keys: {list(callback_data.keys())}")
+            print(f"Waiting for MP4 callback, request_id: {request_id}, elapsed time: {int(time.time() - start_time)}s, available keys: {list(callback_data.keys())}")
             # 定期的に新しいコールバックデータをデバッグ出力
             if int(time.time() - start_time) % 20 < 2:  # 20秒ごとに出力
                 for key in callback_data.keys():
                     if key not in callback_data_keys_before:
-                        print(f"New callback data found for key {key}: {json.dumps(callback_data[key].get('data', {}), ensure_ascii=False)[:200]}...")
+                        print(f"New callback data found for key {key} for request_id: {request_id}: {json.dumps(callback_data[key].get('data', {}), ensure_ascii=False)[:200]}...")
         
         # タイムアウトした場合
         return jsonify({
             "code": 408,
             "data": {
                 "task_id": mp4_task_id,
+                "request_id": request_id,
                 "status": "processing"
             },
-            "msg": "MP4生成がタイムアウトしました。処理は続行中です。"
+            "msg": f"MP4生成がタイムアウトしました（request_id: {request_id}）。処理は続行中です。"
         })
         
     except Exception as e:
