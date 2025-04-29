@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify, send_file, render_template
 from dotenv import load_dotenv
 from datetime import datetime
 from modules.music.generator import generate_music_with_suno
+from modules.video.generator import generate_video_from_text, merge_video_audio
 
 # Flaskアプリケーションの初期化
 app = Flask(__name__)
@@ -135,6 +136,132 @@ def api_docs():
                 "path": "/api/generate-mp4-with-callback",
                 "method": "POST",
                 "description": "MP4ビデオを生成し、コールバックを待機するAPIエンドポイント"
+            },
+            {
+                "path": "/api/generate-video",
+                "method": "POST",
+                "description": "テキストから動画を生成",
+                "parameters": [
+                    {
+                        "name": "prompt",
+                        "type": "string",
+                        "description": "動画生成用のテキストプロンプト（必須）"
+                    },
+                    {
+                        "name": "aspect_ratio",
+                        "type": "string",
+                        "description": "アスペクト比（デフォルト: '9:16'）"
+                    },
+                    {
+                        "name": "duration",
+                        "type": "integer",
+                        "description": "動画の長さ（秒）（デフォルト: 8）"
+                    },
+                    {
+                        "name": "style",
+                        "type": "string",
+                        "description": "動画のスタイル（デフォルト: 'cyberpunk'）"
+                    }
+                ]
+            },
+            {
+                "path": "/api/merge-video-audio",
+                "method": "POST",
+                "description": "動画と音声をマージ",
+                "parameters": [
+                    {
+                        "name": "video_url",
+                        "type": "string",
+                        "description": "動画のURL（必須）"
+                    },
+                    {
+                        "name": "audio_url",
+                        "type": "string",
+                        "description": "音声のURL（必須）"
+                    },
+                    {
+                        "name": "video_start",
+                        "type": "integer",
+                        "description": "動画の開始位置（秒）（デフォルト: 0）"
+                    },
+                    {
+                        "name": "video_end",
+                        "type": "integer",
+                        "description": "動画の終了位置（秒、-1は最後まで）（デフォルト: -1）"
+                    },
+                    {
+                        "name": "audio_start",
+                        "type": "integer",
+                        "description": "音声の開始位置（秒）（デフォルト: 0）"
+                    },
+                    {
+                        "name": "audio_end",
+                        "type": "integer",
+                        "description": "音声の終了位置（秒、-1は最後まで）（デフォルト: -1）"
+                    },
+                    {
+                        "name": "audio_fade_in",
+                        "type": "integer",
+                        "description": "音声のフェードイン時間（秒）（デフォルト: 0）"
+                    },
+                    {
+                        "name": "audio_fade_out",
+                        "type": "integer",
+                        "description": "音声のフェードアウト時間（秒）（デフォルト: 0）"
+                    },
+                    {
+                        "name": "override_audio",
+                        "type": "boolean",
+                        "description": "既存の音声を上書きするかどうか（デフォルト: false）"
+                    },
+                    {
+                        "name": "merge_intensity",
+                        "type": "number",
+                        "description": "マージの強度（0.0-1.0）（デフォルト: 0.5）"
+                    },
+                    {
+                        "name": "output_path",
+                        "type": "string",
+                        "description": "出力ファイルのパス（デフォルト: 'result.mp4'）"
+                    }
+                ]
+            },
+            {
+                "path": "/api/webhook/segmind",
+                "method": "POST",
+                "description": "SegmindのWebhookを受け取るエンドポイント",
+                "parameters": [
+                    {
+                        "name": "event_type",
+                        "type": "string",
+                        "description": "イベントタイプ（NODE_RUN または GRAPH_RUN）"
+                    },
+                    {
+                        "name": "node_id",
+                        "type": "string",
+                        "description": "ノードID（NODE_RUNイベントの場合）"
+                    },
+                    {
+                        "name": "graph_id",
+                        "type": "string",
+                        "description": "グラフID（GRAPH_RUNイベントの場合）"
+                    },
+                    {
+                        "name": "status",
+                        "type": "string",
+                        "description": "処理の状態"
+                    },
+                    {
+                        "name": "output_url",
+                        "type": "string",
+                        "description": "出力URL（NODE_RUNイベントの場合）"
+                    },
+                    {
+                        "name": "outputs",
+                        "type": "object",
+                        "description": "出力データ（GRAPH_RUNイベントの場合）"
+                    }
+                ]
             }
         ],
         "default_prompt": DEFAULT_PROMPT
@@ -1076,6 +1203,162 @@ def api_generate_mp4_with_callback():
             "code": 500,
             "data": None,
             "msg": f"エラーが発生しました: {str(e)}"
+        }), 500
+
+@app.route('/api/generate-video', methods=['POST'])
+def generate_video():
+    try:
+        # リクエストからデータを取得
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON data"}), 400
+        
+        # パラメータを取得（オプショナルなものはデフォルト値を設定）
+        prompt = data.get('prompt')
+        if not prompt:
+            return jsonify({"error": "Prompt is required"}), 400
+            
+        aspect_ratio = data.get('aspect_ratio', '9:16')
+        duration = data.get('duration', 8)
+        style = data.get('style', 'cyberpunk')
+        
+        # 動画生成を実行
+        from modules.video.generator import generate_video_from_text
+        result = generate_video_from_text(
+            prompt=prompt,
+            aspect_ratio=aspect_ratio,
+            duration=duration,
+            style=style
+        )
+        
+        # 成功レスポンスを返す
+        return jsonify({
+            "success": True,
+            "result": result,
+            "message": "Video generation completed successfully"
+        })
+        
+    except Exception as e:
+        print(f"Error generating video: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/merge-video-audio', methods=['POST'])
+def merge_video_audio_endpoint():
+    try:
+        # リクエストからデータを取得
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON data"}), 400
+        
+        # 必須パラメータの確認
+        video_url = data.get('video_url')
+        audio_url = data.get('audio_url')
+        
+        if not video_url or not audio_url:
+            return jsonify({"error": "video_url and audio_url are required"}), 400
+        
+        # オプショナルパラメータの取得
+        video_start = data.get('video_start', 0)
+        video_end = data.get('video_end', -1)
+        audio_start = data.get('audio_start', 0)
+        audio_end = data.get('audio_end', -1)
+        audio_fade_in = data.get('audio_fade_in', 0)
+        audio_fade_out = data.get('audio_fade_out', 0)
+        override_audio = data.get('override_audio', False)
+        merge_intensity = data.get('merge_intensity', 0.5)
+        output_path = data.get('output_path', 'result.mp4')
+        
+        # 動画と音声をマージ
+        result = merge_video_audio(
+            video_url=video_url,
+            audio_url=audio_url,
+            video_start=video_start,
+            video_end=video_end,
+            audio_start=audio_start,
+            audio_end=audio_end,
+            audio_fade_in=audio_fade_in,
+            audio_fade_out=audio_fade_out,
+            override_audio=override_audio,
+            merge_intensity=merge_intensity,
+            output_path=output_path
+        )
+        
+        if not result.get('success'):
+            return jsonify(result), 500
+        
+        # 成功レスポンスを返す
+        return jsonify({
+            "success": True,
+            "message": "Video and audio merged successfully",
+            "output_path": output_path,
+            "download_url": f"/api/download/{os.path.basename(output_path)}"
+        })
+        
+    except Exception as e:
+        print(f"Error merging video and audio: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to merge video and audio"
+        }), 500
+
+@app.route('/api/webhook/segmind', methods=['POST'])
+def segmind_webhook():
+    try:
+        # Webhookデータを取得
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON data"}), 400
+        
+        print(f"Received Segmind webhook: {json.dumps(data, ensure_ascii=False)}")
+        
+        # イベントタイプを確認
+        event_type = data.get('event_type')
+        if not event_type:
+            return jsonify({"error": "event_type is required"}), 400
+        
+        # イベントタイプに応じた処理
+        if event_type == 'NODE_RUN':
+            # ノード実行イベントの処理
+            node_id = data.get('node_id')
+            status = data.get('status')
+            output_url = data.get('output_url')
+            
+            print(f"Node {node_id} status: {status}")
+            if output_url:
+                print(f"Output URL: {output_url}")
+            
+            # ここで必要な処理を実行
+            # 例: 出力URLを保存、次の処理を実行など
+            
+        elif event_type == 'GRAPH_RUN':
+            # ワークフロー完了イベントの処理
+            graph_id = data.get('graph_id')
+            status = data.get('status')
+            outputs = data.get('outputs', {})
+            
+            print(f"Graph {graph_id} completed with status: {status}")
+            print(f"Outputs: {json.dumps(outputs, ensure_ascii=False)}")
+            
+            # ここで必要な処理を実行
+            # 例: 最終結果の保存、通知の送信など
+        
+        # 成功レスポンスを返す
+        return jsonify({
+            "success": True,
+            "message": "Webhook received and processed successfully"
+        })
+        
+    except Exception as e:
+        print(f"Error processing webhook: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to process webhook"
         }), 500
 
 if __name__ == '__main__':
