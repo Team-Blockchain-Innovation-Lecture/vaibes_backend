@@ -688,7 +688,7 @@ def generate_audio_with_callback():
         genre = data.get('genre', '')
         instrumental = data.get('instrumental', False)
         model_version = data.get('model_version', 'v4')
-        timeout = data.get('timeout', 600)  # タイムアウトを10分に延長
+        timeout = data.get('timeout', 3)  # タイムアウトを3秒に延長
         request_id = data.get('request_id', str(uuid.uuid4()))  # リクエスト識別用ID（クライアントから送信されるか、自動生成）
         
         print(f"★★★ Received generate request with request_id: {request_id} ★★★")
