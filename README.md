@@ -35,14 +35,14 @@ curl -X POST "http://localhost:5001/api/generate" \
 
 ### コールバック含めた音楽生成
 ```
-curl -X POST "https://ae73-240b-10-27c1-7e00-2425-9b44-c411-f7a7.ngrok-free.app/api/generate-with-callback" \
+curl -X POST "https://5fe5-240b-10-27c1-7e00-1c55-e4aa-22e4-d0cd.ngrok-free.app/api/generate-with-callback" \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "Silk‑lined shadows weave across the boulevard,Reflections dancing on a midnight silver car.City lights whisper in a fever‑dream glow,Every step a rhythm only restless hearts can know.Sparks in our veins start to flicker and ignite, Two silhouettes colliding in electric twilight.Under velvet neon nights, we’re weightless, floating high; Gravity’s a rumor that the skyline can’t deny. Paint my name across the stars, let the cosmos hear our vows Love is louder than the city, and the night belongs to us now.",
+    "prompt": "Silk‑lined shadows weave across the boulevard,Reflections dancing on a midnight silver car.",
     "genre": "EDM",
     "instrumental": false,
     "model_version": "v4",
-    "timeout": 90
+    "timeout": 5
   }'
 ```
 

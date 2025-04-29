@@ -383,59 +383,51 @@ def callback():
         print(f"★★★ Received callback data: {json.dumps(data, ensure_ascii=False)[:500]}... ★★★")
         
         # タスクIDを取得（Sunoのコールバック形式に合わせる）
-        task_id = None
-        if "data" in data and "task_id" in data["data"]:
-            task_id = data["data"]["task_id"]
-            print(f"★★★ Found task_id in data.data.task_id: {task_id} ★★★")
-        elif "taskId" in data:
-            task_id = data["taskId"]
-            print(f"★★★ Found task_id in taskId: {task_id} ★★★")
-        elif "task_id" in data:
-            task_id = data["task_id"]
-            print(f"★★★ Found task_id in task_id: {task_id} ★★★")
-            
-        if not task_id:
-            print(f"Warning: No task_id in callback data, searching in nested data")
-            # データ内を再帰的に検索
-            def find_task_id(obj):
-                if isinstance(obj, dict):
-                    if "task_id" in obj:
-                        return obj["task_id"]
-                    for k, v in obj.items():
-                        result = find_task_id(v)
-                        if result:
-                            return result
-                elif isinstance(obj, list):
-                    for item in obj:
-                        result = find_task_id(item)
-                        if result:
-                            return result
-                return None
-                
-            task_id = find_task_id(data)
-            if task_id:
-                print(f"★★★ Found task_id in nested data: {task_id} ★★★")
-            
-        if not task_id:
+        task_ids = set()  # すべての可能性のあるタスクIDを保存
+        
+        # コールバックデータ内のすべてのタスクIDを収集
+        def collect_task_ids(obj):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k in ["task_id", "taskId"] and isinstance(v, str):
+                        task_ids.add(v)
+                    # titleフィールドからタスクIDを抽出
+                    if k == "title" and isinstance(v, str) and "Generated Music" in v:
+                        title_task_id = v.split("Generated Music")[-1].strip()
+                        if title_task_id:
+                            task_ids.add(title_task_id)
+                    collect_task_ids(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    collect_task_ids(item)
+        
+        collect_task_ids(data)
+        
+        print(f"★★★ Found task IDs in callback data: {task_ids} ★★★")
+        
+        if not task_ids:
             print(f"Warning: No task_id found in callback data")
             # 一時的なIDを生成
             task_id = str(uuid.uuid4())
+            task_ids.add(task_id)
             print(f"Generated temporary task_id: {task_id}")
-        else:
-            print(f"Found task_id in callback data: {task_id}")
         
         # コールバックデータを保存
         callback_time = datetime.now().isoformat()
-        callback_data[task_id] = {
+        callback_info = {
             "data": data,
             "timestamp": callback_time
         }
         
-        print(f"★★★ Stored callback data for task_id: {task_id} ★★★")
+        # 見つかったすべてのタスクIDで保存
+        for task_id in task_ids:
+            callback_data[task_id] = callback_info
+            print(f"★★★ Stored callback data for task_id: {task_id} ★★★")
+        
         print(f"★★★ Available callback keys after storing: {list(callback_data.keys())} ★★★")
         
         # 通常のレスポンスを返す
-        return jsonify({"success": True, "task_id": task_id})
+        return jsonify({"success": True, "task_ids": list(task_ids)})
         
     except Exception as e:
         print(f"Error processing callback: {str(e)}")
@@ -490,22 +482,66 @@ def get_callback(task_id):
         print(f"Accessing callback data for task_id: {task_id}")
         print(f"Available callback keys: {list(callback_data.keys())}")
         
-        if task_id not in callback_data:
-            print(f"Task ID {task_id} not found in callback_data")
+        # 完全一致で検索
+        if task_id in callback_data:
+            print(f"Found exact match for task_id: {task_id}")
             return jsonify({
-                "status": "not_found",
-                "message": f"No callback data found for task_id: {task_id}",
-                "available_tasks": list(callback_data.keys())
-            }), 404
+                "status": "success",
+                "message": f"Callback data for task_id: {task_id}",
+                "task_id": task_id,
+                "timestamp": callback_data[task_id].get("timestamp"),
+                "data": callback_data[task_id].get("data")
+            })
         
-        print(f"Found callback data for task_id: {task_id}")
+        # 部分一致で検索（タスクIDの一部が含まれるキーを探す）
+        for key in callback_data.keys():
+            if task_id in key or key in task_id:
+                print(f"Found partial match: {key} for task_id: {task_id}")
+                return jsonify({
+                    "status": "success",
+                    "message": f"Callback data for task_id: {task_id} (matched with {key})",
+                    "task_id": key,
+                    "timestamp": callback_data[key].get("timestamp"),
+                    "data": callback_data[key].get("data")
+                })
+        
+        # コールバックデータ内を再帰的に検索
+        for key, cb in callback_data.items():
+            def find_task_id(obj):
+                if isinstance(obj, dict):
+                    # task_idフィールドのチェック
+                    if "task_id" in obj and obj["task_id"] == task_id:
+                        return True
+                    # titleフィールドのチェック
+                    if "title" in obj and isinstance(obj["title"], str):
+                        title_task_id = obj["title"].split("Generated Music")[-1].strip()
+                        if title_task_id and title_task_id in task_id:
+                            return True
+                    for v in obj.values():
+                        if find_task_id(v):
+                            return True
+                elif isinstance(obj, list):
+                    for item in obj:
+                        if find_task_id(item):
+                            return True
+                return False
+            
+            if find_task_id(cb.get("data", {})):
+                print(f"Found task_id in nested data: {key}")
+                return jsonify({
+                    "status": "success",
+                    "message": f"Callback data for task_id: {task_id} (found in {key})",
+                    "task_id": key,
+                    "timestamp": cb.get("timestamp"),
+                    "data": cb.get("data")
+                })
+        
+        print(f"Task ID {task_id} not found in callback_data")
         return jsonify({
-            "status": "success",
-            "message": f"Callback data for task_id: {task_id}",
-            "task_id": task_id,
-            "timestamp": callback_data[task_id].get("timestamp"),
-            "data": callback_data[task_id].get("data")
-        })
+            "status": "not_found",
+            "message": f"No callback data found for task_id: {task_id}",
+            "available_tasks": list(callback_data.keys())
+        }), 404
     except Exception as e:
         print(f"Error retrieving callback data for task_id {task_id}: {str(e)}")
         import traceback
