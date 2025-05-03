@@ -1267,18 +1267,14 @@ def merge_video_audio_endpoint():
         # 動画と音声をマージ
         result = merge_video_audio(
             video_url=video_url,
-            audio_url=audio_url,
+            audio_url=audio_url
         )
         
         if not result.get('success'):
             return jsonify(result), 500
         
         # 成功レスポンスを返す
-        return jsonify({
-            "success": True,
-            "message": "Video and audio merged successfully",
-            "output_path": result.get('s3_url'),
-        })
+        return jsonify(result)
         
     except Exception as e:
         print(f"Error merging video and audio: {str(e)}")
