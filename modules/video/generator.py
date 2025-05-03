@@ -161,8 +161,8 @@ def merge_video_audio(
         if not bucket_name:
             raise ValueError("S3_BUCKET environment variable is not set")
         
-        #s3_url = upload_to_s3(output_path, bucket_name)
-        s3_url = f"https://{bucket_name}.s3.amazonaws.com/generate/{output_path}"
+        s3_url = upload_to_s3(output_path, bucket_name)
+        # s3_url = f"https://{bucket_name}.s3.amazonaws.com/generate/{output_path}"
         if not s3_url:
             raise Exception("Failed to upload to S3")
 
@@ -211,7 +211,7 @@ def merge_video_audio(
 def upload_to_s3(file_path, bucket_name):
     try:
         s3_client = boto3.client('s3')
-        file_name = f"generate/{file_path}"
+        file_name = f"generated/{file_path}"
         
         s3_client.upload_file(
             file_path,
