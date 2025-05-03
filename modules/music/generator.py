@@ -139,10 +139,10 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
         print(f"Formatted model: {formatted_model}")
         
         # タスクIDの生成（一意の識別子）
-        task_id = str(uuid.uuid4())
+        request_task_id = str(uuid.uuid4())
         
         # コールバックURLの設定
-        callback_url = CALLBACK_URL
+        callback_url = CALLBACK_URL + "/api/callback/generate/music"
         # 確実にhttpsにする（Sunoのコールバックはhttpsを要求）
         if not callback_url.startswith("https://"):
             callback_url = callback_url.replace("http://", "https://")
@@ -168,11 +168,11 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
         data = {
             "prompt": enhanced_prompt,
             "style": reference_style if reference_style else "",
-            "title": f"Generated Music {task_id[:8]}",
+            "title": f"Generated Music {request_task_id[:8]}",
             "customMode": True,
             "instrumental": not with_lyrics,
             "model": formatted_model,
-            "taskId": task_id,
+            "taskId": request_task_id,
             "callBackUrl": callback_url
         }
         
@@ -190,10 +190,16 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
             
             # 成功レスポンスの処理
             if response_data.get("code") == 200:
+                # レスポンスからtaskIdを取得
+                response_task_id = response_data.get("data", {}).get("taskId")
+                if not response_task_id:
+                    raise Exception("No taskId in response")
+                
                 result = {
                     "success": True,
                     "status": "pending",
-                    "task_id": task_id,
+                    "request_task_id": request_task_id,
+                    "response_task_id": response_task_id,
                     "message": "Music generation request submitted successfully"
                 }
                 

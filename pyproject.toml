@@ -6,9 +6,9 @@ authors = [
     {name = "omatsuman69",email = "yoshikim1467@gmail.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11,<3.12"
 dependencies = [
-    "flask (>=3.1.0,<4.0.0)",
+    "flask[async] (>=3.1.0,<4.0.0)",
     "requests (>=2.32.3,<3.0.0)",
     "dotenv (>=0.9.9,<0.10.0)",
     "python-dotenv (>=1.0.1,<2.0.0)",
@@ -21,7 +21,15 @@ dependencies = [
     "ipadic (>=1.0.0,<2.0.0)",
     "unidic-lite (>=1.0.8,<2.0.0)",
     "matplotlib (>=3.10.1,<4.0.0)",
-    "flask-cors (>=4.0.0,<5.0.0)"
+    "flask-cors (>=4.0.0,<5.0.0)",
+    "fal (>=0.9.0,<1.0.0)",
+    "pydub (>=0.25.1,<0.26.0)",
+    "fal-client (>=0.6.0,<0.7.0)",
+    "hypercorn (>=0.17.3,<0.18.0)",
+    "moviepy (>=2.1.2,<3.0.0)",
+    "ffmpeg-python (>=0.2.0,<0.3.0)",
+    "boto3 (>=1.38.8,<2.0.0)",
+    "uuid (>=1.30,<2.0)",
 ]
 
 

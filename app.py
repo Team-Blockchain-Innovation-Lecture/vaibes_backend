@@ -2,6 +2,7 @@ import os
 import time
 import json
 import uuid
+import logging
 from flask import Flask, request, jsonify, send_file, render_template
 from dotenv import load_dotenv
 from datetime import datetime
@@ -25,6 +26,8 @@ callback_data = {}
 
 # リクエストIDとタスクIDのマッピングを保存するためのディクショナリ
 app.request_task_mapping = {}
+
+logger = logging.getLogger(__name__)
 
 # ルートエンドポイント: APIドキュメント
 @app.route('/')
@@ -296,13 +299,18 @@ def generate_audio():
         if 'error' in result:
             return jsonify(result), 500
             
-        # タスクIDを取得
-        task_id = result.get('task_id')
+        # レスポンスからtaskIdを取得
+        response_task_id = result.get('response_task_id')
+        if not response_task_id:
+            return jsonify({
+                "error": "No taskId in response",
+                "details": result
+            }), 500
         
         # 即時レスポンスを返す（非同期処理に変更）
         return jsonify({
             "success": True,
-            "task_id": task_id,
+            "task_id": response_task_id,
             "status": "processing",
             "message": "音楽生成を開始しました。状態は /api/check-status で確認できます。",
             "check_status_endpoint": f"/api/check-status"
@@ -1206,7 +1214,7 @@ def api_generate_mp4_with_callback():
         }), 500
 
 @app.route('/api/generate-video', methods=['POST'])
-def generate_video():
+async def generate_video():
     try:
         # リクエストからデータを取得
         data = request.get_json()
@@ -1224,7 +1232,7 @@ def generate_video():
         
         # 動画生成を実行
         from modules.video.generator import generate_video_from_text
-        result = generate_video_from_text(
+        result = await generate_video_from_text(
             prompt=prompt,
             aspect_ratio=aspect_ratio,
             duration=duration,
@@ -1232,11 +1240,7 @@ def generate_video():
         )
         
         # 成功レスポンスを返す
-        return jsonify({
-            "success": True,
-            "result": result,
-            "message": "Video generation completed successfully"
-        })
+        return jsonify(result)
         
     except Exception as e:
         print(f"Error generating video: {str(e)}")
