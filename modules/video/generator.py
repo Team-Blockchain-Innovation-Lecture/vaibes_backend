@@ -9,6 +9,7 @@ import ffmpeg
 import random
 import boto3
 import uuid
+import hashlib
 from botocore.exceptions import ClientError
 
 # ロギングの基本設定
@@ -87,34 +88,17 @@ async def generate_video_from_text(
 def merge_video_audio(
     video_url: str,
     audio_url: str,
-    video_start: int = 0,
-    video_end: int = -1,
-    audio_start: int = 0,
-    audio_end: int = -1,
-    audio_fade_in: int = 0,
-    audio_fade_out: int = 0,
-    override_audio: bool = False,
-    merge_intensity: float = 0.5,
-    output_path: str = "result.mp4"
 ) -> dict:
     """
     動画と音声をマージする
 
     :param video_url: 動画のURL
     :param audio_url: 音声のURL
-    :param video_start: 動画の開始位置（秒）
-    :param video_end: 動画の終了位置（秒、-1は最後まで）
-    :param audio_start: 音声の開始位置（秒）
-    :param audio_end: 音声の終了位置（秒、-1は最後まで）
-    :param audio_fade_in: 音声のフェードイン時間（秒）
-    :param audio_fade_out: 音声のフェードアウト時間（秒）
-    :param override_audio: 既存の音声を上書きするかどうか
-    :param merge_intensity: マージの強度（0.0-1.0）
-    :param output_path: 出力ファイルのパス
-    :return: 処理結果（dict）
     """
-    # 一時ファイル名を生成
-    file_id = str(uuid.uuid4())
+    # URLをベースにした一貫性のあるハッシュを生成
+    combined_urls = f"{video_url}|{audio_url}"
+    file_id = hashlib.md5(combined_urls.encode()).hexdigest()[:12]  # 12文字のハッシュを使用
+    
     temp_audio_path = f"{file_id}_audio.mp3"
     temp_video_path = f"{file_id}_video.mp4"
     output_path = f"{file_id}.mp4"

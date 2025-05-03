@@ -1250,6 +1250,7 @@ async def generate_video():
 
 @app.route('/api/merge-video-audio', methods=['POST'])
 def merge_video_audio_endpoint():
+
     try:
         # リクエストからデータを取得
         data = request.get_json()
@@ -1263,30 +1264,10 @@ def merge_video_audio_endpoint():
         if not video_url or not audio_url:
             return jsonify({"error": "video_url and audio_url are required"}), 400
         
-        # オプショナルパラメータの取得
-        video_start = data.get('video_start', 0)
-        video_end = data.get('video_end', -1)
-        audio_start = data.get('audio_start', 0)
-        audio_end = data.get('audio_end', -1)
-        audio_fade_in = data.get('audio_fade_in', 0)
-        audio_fade_out = data.get('audio_fade_out', 0)
-        override_audio = data.get('override_audio', False)
-        merge_intensity = data.get('merge_intensity', 0.5)
-        output_path = data.get('output_path', 'result.mp4')
-        
         # 動画と音声をマージ
         result = merge_video_audio(
             video_url=video_url,
             audio_url=audio_url,
-            video_start=video_start,
-            video_end=video_end,
-            audio_start=audio_start,
-            audio_end=audio_end,
-            audio_fade_in=audio_fade_in,
-            audio_fade_out=audio_fade_out,
-            override_audio=override_audio,
-            merge_intensity=merge_intensity,
-            output_path=output_path
         )
         
         if not result.get('success'):
@@ -1296,8 +1277,7 @@ def merge_video_audio_endpoint():
         return jsonify({
             "success": True,
             "message": "Video and audio merged successfully",
-            "output_path": output_path,
-            "download_url": f"/api/download/{os.path.basename(output_path)}"
+            "output_path": result.get('s3_url'),
         })
         
     except Exception as e:
