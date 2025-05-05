@@ -1,6 +1,6 @@
 # vaibes_backend
 
-## Setup（poetry）
+## Setup (poetry)
 
 ```bash
 poetry install
@@ -10,7 +10,7 @@ poetry install
 
 ```bash
 poetry run python XXX.py
-または
+or
 poetry run python -m XXX
 ```
 
@@ -20,20 +20,20 @@ poetry run python -m XXX
 poetry run python milvus_create.py
 ```
 
-## テスト
+## Testing
 
 ```bash
 curl -X POST "http://localhost:5001/api/generate" \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "クールなEDMで「バイブス」と歌って",
+    "prompt": "Cool EDM with lyrics saying 'Vibes'",
     "genre": "EDM",
     "instrumental": false,
     "model_version": "v3.5"
   }'
 ```
 
-### コールバック含めた音楽生成
+### Music Generation with Callback
 ```
 curl -X POST "https://5fe5-240b-10-27c1-7e00-1c55-e4aa-22e4-d0cd.ngrok-free.app/api/generate-with-callback" \
   -H "Content-Type: application/json" \
@@ -46,7 +46,7 @@ curl -X POST "https://5fe5-240b-10-27c1-7e00-1c55-e4aa-22e4-d0cd.ngrok-free.app/
   }'
 ```
 
-### 動画生成
+### Video Generation
 ```
 curl -X POST "https://b94d-203-136-72-13.ngrok-free.app/api/generate-mp4-with-callback" \
   -H "Content-Type: application/json" \
@@ -56,21 +56,25 @@ curl -X POST "https://b94d-203-136-72-13.ngrok-free.app/api/generate-mp4-with-ca
     "author" : "Omatsu"
   }'
 ```
-ngrokをインストール
+
+## ngrok Setup
+
+Install ngrok
 ```bash
 brew install ngrok
 ```
-ngrokのAPIキーを設定
+
+Configure ngrok API key
 ```bash
-ngrok config add-authtoken <ngrokのAPIキー>
+ngrok config add-authtoken <your-ngrok-api-key>
 ```
 
-ngrokを起動
+Start ngrok
 ```bash
 ngrok http 5001
 ```
 
-ngrokのURLを環境変数に設定
+Set ngrok URL as environment variable
 ```bash
 export CALLBACK_URL=https://ae73-240b-10-27c1-7e00-2425-9b44-c411-f7a7.ngrok-free.app/callback
 ```

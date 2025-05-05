@@ -6,10 +6,10 @@ import uuid
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 
-# 環境変数を読み込む
+# Load environment variables
 load_dotenv()
 
-# Suno API設定
+# Suno API settings
 SUNO_API_KEY = os.getenv("SUNO_API_KEY")
 CALLBACK_URL = os.getenv("CALLBACK_URL", "http://localhost:5001/callback")
 BASE_URL = "https://apibox.erweima.ai"
@@ -18,16 +18,16 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def call_suno_api(endpoint, data, max_retries=3, retry_delay=5):
     """
-    Suno APIを呼び出す共通関数（リトライ機能付き）
+    Common function to call Suno API (with retry functionality)
     
     Args:
-        endpoint: APIエンドポイント
-        data: リクエストデータ
-        max_retries: 最大リトライ回数
-        retry_delay: リトライ間の待機時間（秒）
+        endpoint: API endpoint
+        data: Request data
+        max_retries: Maximum number of retries
+        retry_delay: Delay between retries (seconds)
         
     Returns:
-        APIレスポンス
+        API response
     """
     retry_count = 0
     last_exception = None
@@ -46,9 +46,9 @@ def call_suno_api(endpoint, data, max_retries=3, retry_delay=5):
             response = requests.post(f"{BASE_URL}{endpoint}", headers=headers, json=data, timeout=60)
             
             print(f"Response status: {response.status_code}")
-            print(f"Response body: {response.text[:500]}...")  # 長いレスポンスは省略
+            print(f"Response body: {response.text[:500]}...")  # Truncate long responses
             
-            # 503エラーの場合はリトライ
+            # Retry on 503 error
             if response.status_code == 503:
                 retry_count += 1
                 print(f"Received 503 error. Retrying in {retry_delay} seconds...")
@@ -66,7 +66,7 @@ def call_suno_api(endpoint, data, max_retries=3, retry_delay=5):
                 print(f"Response text: {response.text}")
                 raise Exception(f"Failed to parse JSON response: {str(e)}")
             
-            # APIのレスポンス形式に合わせてエラーチェック
+            # Check for API errors based on response format
             if result.get("code") != 200:
                 error_msg = f"API error: {result.get('msg')}"
                 print(f"ERROR: {error_msg}")
@@ -87,7 +87,7 @@ def call_suno_api(endpoint, data, max_retries=3, retry_delay=5):
             print(f"Retrying in {retry_delay} seconds... (Attempt {retry_count}/{max_retries})")
             time.sleep(retry_delay)
     
-    # すべてのリトライが失敗した場合
+    # If all retries failed
     if last_exception:
         raise last_exception
     else:
@@ -95,18 +95,18 @@ def call_suno_api(endpoint, data, max_retries=3, retry_delay=5):
 
 def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, model_version="v4", wait_for_completion=False, max_wait_time=300):
     """
-    Suno APIを使用して音楽を生成する関数
+    Function to generate music using Suno API
     
     Args:
-        prompt: 音楽生成のプロンプト
-        reference_style: 参照スタイル（ジャンルなど）
-        with_lyrics: 歌詞を含めるかどうか（デフォルトはTrue）
-        model_version: モデルバージョン（v3.5, v4など）
-        wait_for_completion: 生成完了を待つかどうか
-        max_wait_time: 最大待機時間（秒）
+        prompt: Music generation prompt
+        reference_style: Reference style (genre etc.)
+        with_lyrics: Whether to include lyrics (default: True)
+        model_version: Model version (v3.5, v4 etc.)
+        wait_for_completion: Whether to wait for generation completion
+        max_wait_time: Maximum wait time (seconds)
         
     Returns:
-        生成された音楽の情報、またはエラー情報を含む辞書
+        Dictionary containing generated music information or error information
     """
     try:
         print(f"\nGenerating music with Suno API...")
@@ -116,55 +116,55 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
         print(f"Model version: {model_version}")
         print(f"Wait for completion: {wait_for_completion}")
         
-        # APIキーの確認
+        # Check API key
         if not SUNO_API_KEY:
             print("ERROR: SUNO_API_KEY is not set")
             return {"error": "SUNO_API_KEY is not set in environment variables"}
             
         print(f"SUNO_API_KEY: {SUNO_API_KEY[:5]}...{SUNO_API_KEY[-5:] if SUNO_API_KEY else ''}")
         
-        # APIエンドポイント
+        # API endpoint
         api_endpoint = "/api/v1/generate"
         
-        # モデルバージョンのフォーマット - 修正
-        # Suno APIが受け付ける正確な形式に変換
+        # Model version format - correction
+        # Convert to exact format accepted by Suno API
         if model_version.lower() == "v3.5" or model_version.lower() == "v3_5" or model_version == "3.5":
-            formatted_model = "V3_5"  # 大文字V、アンダースコア
+            formatted_model = "V3_5"  # Capital V, underscore
         elif model_version.lower() == "v4" or model_version == "4":
-            formatted_model = "V4"    # 大文字V
+            formatted_model = "V4"    # Capital V
         else:
-            # デフォルトはV4
+            # Default to V4
             formatted_model = "V4"
             
         print(f"Formatted model: {formatted_model}")
         
-        # タスクIDの生成（一意の識別子）
+        # Generate task ID (unique identifier)
         request_task_id = str(uuid.uuid4())
         
-        # コールバックURLの設定
+        # Set callback URL
         callback_url = CALLBACK_URL + "/api/callback/generate/music"
-        # 確実にhttpsにする（Sunoのコールバックはhttpsを要求）
+        # Ensure https (Suno callback requires https)
         if not callback_url.startswith("https://"):
             callback_url = callback_url.replace("http://", "https://")
         print(f"Using callback URL: {callback_url}")
-        # ローカル開発環境の場合、コールバックURLを確認
+        # Check callback URL for local development environment
         if "localhost" in callback_url or "127.0.0.1" in callback_url:
-            print(f"警告: ローカルURLへのコールバックは外部から到達できない可能性があります: {callback_url}")
-            print("ngrokなどのトンネリングサービスの使用を検討してください")
+            print(f"Warning: Callback to local URL may not be reachable from outside: {callback_url}")
+            print("Consider using a tunneling service like ngrok")
         
         print(f"Callback URL: {callback_url}")
         
-        # 歌詞付き音楽生成の場合、プロンプトに歌詞に関する指示を追加
+        # For music with lyrics, add lyrics instruction to prompt
         enhanced_prompt = prompt
         if with_lyrics and "歌詞" not in prompt and "lyrics" not in prompt.lower():
-            # プロンプトに歌詞に関する指示がない場合、自動的に追加
+            # If prompt doesn't mention lyrics, add instruction automatically
             if "日本語" in prompt or "Japanese" in prompt:
                 enhanced_prompt += "。日本語の歌詞を含めてください。"
             else:
                 enhanced_prompt += ". Include meaningful lyrics."
             print(f"Enhanced prompt for lyrics: '{enhanced_prompt}'")
         
-        # リクエストデータを準備（Suno APIのドキュメントに基づく正しい形式）
+        # Prepare request data (correct format based on Suno API documentation)
         data = {
             "prompt": enhanced_prompt,
             "style": reference_style if reference_style else "",
@@ -176,21 +176,21 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
             "callBackUrl": callback_url
         }
         
-        # 否定的なタグがあれば追加（オプション）
+        # Add negative tags if available (optional)
         negative_tags = os.getenv("SUNO_NEGATIVE_TAGS", "")
         if negative_tags:
             data["negativeTags"] = negative_tags
         
         print(f"Request data: {json.dumps(data, ensure_ascii=False)}")
         
-        # APIリクエストを送信
+        # Send API request
         try:
             response_data = call_suno_api(api_endpoint, data)
             print(f"Response data: {json.dumps(response_data, ensure_ascii=False)}")
             
-            # 成功レスポンスの処理
+            # Process successful response
             if response_data.get("code") == 200:
-                # レスポンスからtaskIdを取得
+                # Get taskId from response
                 response_task_id = response_data.get("data", {}).get("taskId")
                 if not response_task_id:
                     raise Exception("No taskId in response")
@@ -226,31 +226,31 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
 
 def check_generation_status(task_id):
     """
-    タスクの状態を確認する関数
+    Function to check task status
     
     Args:
-        task_id: タスクID
+        task_id: Task ID
         
     Returns:
-        タスクの状態情報
+        Task status information
     """
     try:
         print(f"\nChecking status for task {task_id}...")
         
-        # APIキーの確認
+        # Check API key
         if not SUNO_API_KEY:
             print("ERROR: SUNO_API_KEY is not set")
             return None
         
-        # リクエストデータを準備
+        # Prepare request data
         data = {
             "taskId": task_id
         }
         
-        # 状態確認APIを呼び出す - 正しいエンドポイントを使用
+        # Call status check API - use correct endpoint
         result = call_suno_api("/api/v1/status", data, max_retries=1)
         
-        # レスポンスからデータを取得
+        # Get data from response
         response_data = result.get("data", {})
         
         print(f"Status response: {json.dumps(response_data, ensure_ascii=False)}")
@@ -265,24 +265,24 @@ def check_generation_status(task_id):
 
 def get_wav_format(task_id):
     """
-    生成された音楽のWAV形式を取得する関数
+    Function to get WAV format of generated music
     
     Args:
-        task_id: タスクID
+        task_id: Task ID
         
     Returns:
-        WAV形式のURL
+        WAV format URL
     """
     try:
         print(f"\nGetting WAV format for task {task_id}...")
         
-        # 状態を確認して完了しているか確認
+        # Check status to confirm completion
         status_result = check_generation_status(task_id)
         if not status_result or status_result.get("status") != "success":
             print("ERROR: Task not completed")
             return None
             
-        # WAV URLを取得
+        # Get WAV URL
         wav_url = status_result.get("audioUrl")
         
         if wav_url:
@@ -298,33 +298,33 @@ def get_wav_format(task_id):
 
 def generate_mp4_video(task_id, audio_id=None, author="AI Music Creator", domain_name=None):
     """
-    Suno APIを使用してMP4ビデオを生成する関数
+    Function to generate MP4 video using Suno API
     
     Args:
-        task_id: タスクID
-        audio_id: 音声ID（指定しない場合はタスクIDから取得）
-        author: 作者名
-        domain_name: ドメイン名
+        task_id: Task ID
+        audio_id: Audio ID (if not specified, get from task ID)
+        author: Author name
+        domain_name: Domain name
         
     Returns:
-        生成されたMP4ビデオのURL
+        URL of generated MP4 video
     """
     try:
         print(f"\nGenerating MP4 video for task {task_id}...")
         
-        # APIキーの確認
+        # Check API key
         if not SUNO_API_KEY:
             print("ERROR: SUNO_API_KEY is not set")
             return {"error": "SUNO_API_KEY is not set in environment variables"}
         
-        # 音声IDが指定されていない場合は、タスクIDから状態を確認して取得
+        # If audio_id not specified, check status from task ID to get it
         if not audio_id:
             status_result = check_generation_status(task_id)
             if not status_result or status_result.get("status") != "success":
                 print("ERROR: Task not completed or audio_id not available")
                 return {"error": "Task not completed or audio_id not available"}
                 
-            # 音声IDを取得（APIレスポンスの形式に依存）
+            # Get audio ID (depends on API response format)
             if "data" in status_result and isinstance(status_result["data"], list) and len(status_result["data"]) > 0:
                 audio_id = status_result["data"][0].get("id")
             
@@ -332,17 +332,17 @@ def generate_mp4_video(task_id, audio_id=None, author="AI Music Creator", domain
                 print("ERROR: Could not find audio_id in task status")
                 return {"error": "Could not find audio_id in task status"}
         
-        # コールバックURLの設定
+        # Set callback URL
         callback_url = os.getenv("CALLBACK_URL")
         if not callback_url:
             print("WARNING: CALLBACK_URL is not set")
             callback_url = "http://localhost:5001/callback"
         
-        # ドメイン名が指定されていない場合はデフォルト値を使用
+        # Use default value if domain name not specified
         if not domain_name:
             domain_name = "https://vaibes.fun/"
         
-        # リクエストデータを準備
+        # Prepare request data
         data = {
             "taskId": task_id,
             "audioId": audio_id,
@@ -353,17 +353,17 @@ def generate_mp4_video(task_id, audio_id=None, author="AI Music Creator", domain
         
         print(f"MP4 generation request data: {json.dumps(data, ensure_ascii=False)}")
         
-        # MP4生成APIを呼び出す
+        # Call MP4 generation API
         result = call_suno_api("/api/v1/mp4/generate", data)
         
-        # レスポンスを処理
+        # Process response
         response_data = result.get("data", {})
         
-        # 成功レスポンスの処理
+        # Process successful response
         if result.get("code") == 200:
             print(f"MP4 generation request submitted successfully")
             
-            # レスポンスからMP4 URLを取得
+            # Get MP4 URL from response
             mp4_url = response_data.get("videoUrl")
             
             if mp4_url:
@@ -375,7 +375,7 @@ def generate_mp4_video(task_id, audio_id=None, author="AI Music Creator", domain
                     "mp4_url": mp4_url
                 }
             else:
-                # MP4 URLがない場合は、タスクIDを返して後で確認できるようにする
+                # If no MP4 URL, return task ID for later status check
                 print("MP4 URL not available yet, check status later")
                 return {
                     "success": True,
@@ -397,36 +397,36 @@ def generate_mp4_video(task_id, audio_id=None, author="AI Music Creator", domain
 
 def generate_lyrics(prompt):
     """
-    Suno APIを使用して歌詞を生成する関数
+    Function to generate lyrics using Suno API
     
     Args:
-        prompt: 歌詞生成のプロンプト
+        prompt: Lyrics generation prompt
         
     Returns:
-        生成された歌詞
+        Generated lyrics
     """
     try:
         print(f"\nGenerating lyrics with Suno API...")
         print(f"Prompt: '{prompt}'")
         
-        # APIキーの確認
+        # Check API key
         if not SUNO_API_KEY:
             print("ERROR: SUNO_API_KEY is not set")
             return None
         
-        # タスクIDを生成
+        # Generate task ID
         task_id = str(uuid.uuid4())
         
-        # リクエストデータを準備
+        # Prepare request data
         data = {
             "prompt": prompt,
             "taskId": task_id
         }
         
-        # 歌詞生成APIを呼び出す
+        # Call lyrics generation API
         result = call_suno_api("/api/v1/lyrics", data)
         
-        # レスポンスから歌詞を取得
+        # Get lyrics from response
         response_data = result.get("data", {})
         lyrics = response_data.get("lyrics")
         
@@ -447,29 +447,29 @@ def generate_lyrics(prompt):
 
 def download_file(url, filename=None, output_dir=None):
     """
-    URLからファイルをダウンロードする関数
+    Function to download file from URL
     
     Args:
-        url: ダウンロードするURL
-        filename: 保存するファイル名（指定しない場合は自動生成）
-        output_dir: 出力ディレクトリ（指定しない場合はデフォルト）
+        url: URL to download
+        filename: Filename to save (auto-generated if not specified)
+        output_dir: Output directory (default if not specified)
         
     Returns:
-        ローカルファイルパス
+        Local file path
     """
     try:
         if not output_dir:
             output_dir = OUTPUT_DIR
             
         if not filename:
-            # URLからファイル名を取得するか、UUIDを使用
+            # Get filename from URL or use UUID
             filename = os.path.basename(url.split('?')[0]) or f"file_{uuid.uuid4()}"
         
         local_path = os.path.join(output_dir, filename)
         
         print(f"\nDownloading file from {url} to {local_path}...")
         
-        # ファイルをダウンロード
+        # Download file
         response = requests.get(url, stream=True)
         if response.status_code == 200:
             with open(local_path, 'wb') as f:
