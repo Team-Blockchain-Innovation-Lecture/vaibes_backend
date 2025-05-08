@@ -298,14 +298,19 @@ def generate_audio():
         
         if 'error' in result:
             return jsonify(result), 500
-            
-        # Get task ID
-        task_id = result.get('task_id')
+        
+        # レスポンスからtaskIdを取得
+        response_task_id = result.get('response_task_id')
+        if not response_task_id:
+            return jsonify({
+                "error": "No taskId in response",
+                "details": result
+            }), 500
         
         # Return immediate response (changed to asynchronous processing)
         return jsonify({
             "success": True,
-            "task_id": task_id,
+            "task_id": response_task_id,
             "status": "processing",
             "message": "Music generation started. Check status at /api/check-status",
             "check_status_endpoint": f"/api/check-status"
