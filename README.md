@@ -1,6 +1,18 @@
 # vaibes_backend
+## Setup (python)
+```bash
+brew install python@3.11
+```
+### install poetry
+```
+curl -sSL https://install.python-poetry.org | python3.11 -
+```
 
 ## Setup (poetry)
+
+```bash
+poetry env use python3.11
+```
 
 ```bash
 poetry install

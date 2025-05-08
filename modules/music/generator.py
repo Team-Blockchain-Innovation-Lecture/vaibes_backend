@@ -161,7 +161,7 @@ def generate_music_with_suno(prompt, reference_style=None, with_lyrics=True, mod
             if "日本語" in prompt or "Japanese" in prompt:
                 enhanced_prompt += "。日本語の歌詞を含めてください。"
             else:
-                enhanced_prompt += ". Include meaningful lyrics."
+                enhanced_prompt += ". "
             print(f"Enhanced prompt for lyrics: '{enhanced_prompt}'")
         
         # Prepare request data (correct format based on Suno API documentation)
