@@ -163,7 +163,7 @@ def api_docs():
                     {
                         "name": "style",
                         "type": "string",
-                        "description": "Style of the video (default: 'cyberpunk')"
+                        "description": "Style of the video (options: 'anime', '3d_animation', 'clay', 'comic', 'cyberpunk'; default: 'cyberpunk')"
                     }
                 ]
             },
@@ -1230,6 +1230,11 @@ async def generate_video():
         duration = data.get('duration', 8)
         style = data.get('style', 'cyberpunk')
         
+        # リクエストパラメータをコンソールに出力
+        print(f"🎬 Received video generation API request:")
+        print(f"🎬 Style: {style}")
+        print(f"🎬 Prompt: {prompt}")
+        print(f"🎬 Aspect ratio: {aspect_ratio}, Duration: {duration}s")
         # Execute video generation
         from modules.video.generator import generate_video_from_text
         result = await generate_video_from_text(

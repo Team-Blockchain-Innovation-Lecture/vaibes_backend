@@ -36,6 +36,9 @@ CALLBACK_URL = os.getenv("CALLBACK_URL", "http://localhost:5001")
 SEGMIND_API_KEY = os.getenv("SEGMIND_API_KEY", "SG_4d5d5ba221ccfc4e")
 SEGMIND_API_URL = "https://api.segmind.com/v1/video-audio-merge"
 
+# 利用可能なスタイル
+AVAILABLE_STYLES = ["anime", "3d_animation", "clay", "comic", "cyberpunk"]
+
 async def generate_video_from_text(
     prompt: str,
     aspect_ratio: str = "9:16",
@@ -48,9 +51,14 @@ async def generate_video_from_text(
     :param prompt: 動画生成用のテキストプロンプト
     :param aspect_ratio: アスペクト比（例: "9:16"）
     :param duration: 動画の長さ（秒）
-    :param style: 動画のスタイル
+    :param style: 動画のスタイル (選択肢: "anime", "3d_animation", "clay", "comic", "cyberpunk")
     :return: APIのレスポンス（dict）
     """
+    # スタイルの検証
+    if style not in AVAILABLE_STYLES:
+        logger.warning(f"指定されたスタイル '{style}' は無効です。利用可能なスタイル: {', '.join(AVAILABLE_STYLES)}。デフォルトの 'cyberpunk' を使用します。")
+        style = "cyberpunk"
+        
     input_data = {
         "prompt": prompt,
         "aspect_ratio": aspect_ratio,
