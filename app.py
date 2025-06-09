@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 from modules.music.generator import generate_music_with_suno
 from modules.video.generator import generate_video_from_text, merge_video_audio
+from modules.veo3 import Veo3Client
 
 # Initialize Flask application
 app = Flask(__name__)
@@ -263,6 +264,48 @@ def api_docs():
                         "name": "outputs",
                         "type": "object",
                         "description": "Output data (for GRAPH_RUN event)"
+                    }
+                ]
+            },
+            {
+                "path": "/api/generate-veo3",
+                "method": "POST",
+                "description": "Generate video using Veo3",
+                "parameters": [
+                    {
+                        "name": "prompt",
+                        "type": "string",
+                        "description": "Prompt for video generation (required)"
+                    },
+                    {
+                        "name": "aspect_ratio",
+                        "type": "string",
+                        "description": "Aspect ratio of the video (default: '16:9')"
+                    },
+                    {
+                        "name": "duration",
+                        "type": "string",
+                        "description": "Duration of the video (default: '8s')"
+                    },
+                    {
+                        "name": "enhance_prompt",
+                        "type": "boolean",
+                        "description": "Whether to enhance the prompt (default: true)"
+                    },
+                    {
+                        "name": "generate_audio",
+                        "type": "boolean",
+                        "description": "Whether to generate audio (default: true)"
+                    },
+                    {
+                        "name": "negative_prompt",
+                        "type": "string",
+                        "description": "Negative prompt for video generation"
+                    },
+                    {
+                        "name": "seed",
+                        "type": "integer",
+                        "description": "Seed for video generation"
                     }
                 ]
             }
@@ -1344,6 +1387,62 @@ def segmind_webhook():
         return jsonify({
             "error": str(e),
             "message": "Failed to process webhook"
+        }), 500
+
+@app.route("/generate_veo", methods=["POST"])
+def generate_veo():
+    data = request.json
+    prompt = data.get("prompt")
+    if not prompt:
+        return jsonify({"error": "promptは必須です"}), 400
+
+    try:
+        result = generate_video_with_audio(prompt, PROJECT_ID)
+        video_uri = None
+        if "response" in result and "generatedSamples" in result["response"]:
+            video_uri = result["response"]["generatedSamples"][0]["video"]["uri"]
+        return jsonify({"video_uri": video_uri, "raw_response": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/generate-veo3', methods=['POST'])
+def generate_veo3():
+    try:
+        # Initialize Veo3 client
+        veo3_client = Veo3Client()
+
+        data = request.get_json()
+        if not data or 'prompt' not in data:
+            return jsonify({
+                'error': 'Missing required parameter: prompt'
+            }), 400
+
+        # Get parameters from request
+        prompt = data['prompt']
+        aspect_ratio = data.get('aspect_ratio', '16:9')
+        duration = data.get('duration', '8s')
+        enhance_prompt = data.get('enhance_prompt', True)
+        generate_audio = data.get('generate_audio', True)
+        negative_prompt = data.get('negative_prompt')
+        seed = data.get('seed')
+
+        # Generate video using Veo3
+        result = veo3_client.generate_video(
+            prompt=prompt,
+            aspect_ratio=aspect_ratio,
+            duration=duration,
+            enhance_prompt=enhance_prompt,
+            generate_audio=generate_audio,
+            negative_prompt=negative_prompt,
+            seed=seed
+        )
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error in generate_veo3: {str(e)}")
+        return jsonify({
+            'error': str(e)
         }), 500
 
 if __name__ == '__main__':
