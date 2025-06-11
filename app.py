@@ -1265,13 +1265,13 @@ async def generate_video():
             return jsonify({"error": "Invalid JSON data"}), 400
         
         # Get parameters (optional ones are set to default values)
-        prompt = data.get('prompt')+", \nThe text above is the lyrics to the song. Generate a video to match the lyrics. Moreover, turn it into an explosively viral, hilarious meme video."
+        prompt = data.get('prompt')
         if not prompt:
             return jsonify({"error": "Prompt is required"}), 400
             
         aspect_ratio = data.get('aspect_ratio', '9:16')
         duration = data.get('duration', 8)
-        style = data.get('style', 'cyberpunk')
+        style = data.get('style', 'anime')
         
         # リクエストパラメータをコンソールに出力
         print(f"🎬 Received video generation API request:")
